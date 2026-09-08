@@ -215,3 +215,60 @@ a {
   left: var(--rail);
   width: var(--col-w);
 }
+
+/* ----------------------------------------------------------------- Mapa */
+
+/* O Leaflet traz CSS próprio (importado em MapCanvas.tsx). O que fica aqui é
+   só o que encaixa o mapa no design system — o resto vem da biblioteca. */
+
+/* Marcadores são HTML nosso: o Leaflet não deve pintar fundo nem borda por
+   baixo, como faz no `.leaflet-div-icon` padrão. */
+.ovolog-marcador {
+  background: transparent;
+  border: 0;
+}
+
+/* Rótulo permanente com o nome do cliente. O balão e a seta do tooltip padrão
+   poluem o mapa quando há muitas paradas — fica só o texto, com contorno
+   branco para continuar legível sobre qualquer tile. */
+.ovolog-rotulo,
+.ovolog-rotulo.leaflet-tooltip {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--color-shell-900);
+  text-shadow:
+    0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+  white-space: nowrap;
+}
+.ovolog-rotulo::before {
+  display: none;
+}
+
+/* A atribuição do OpenStreetMap é obrigatória pela licença: pode encolher
+   para não competir com a operação, não pode sumir. */
+.leaflet-container .leaflet-control-attribution {
+  font-size: 0.625rem;
+  background: rgb(255 255 255 / 0.8);
+}
+
+/* O Leaflet assume a fonte do sistema; o app tem a sua. */
+.leaflet-container {
+  font: inherit;
+  background: var(--color-shell-200);
+}
+
+/* O Leaflet empilha as próprias camadas de 400 (tiles) a 1000 (controles).
+   Sem contenção esses números competem com o resto da página e ganham: o
+   cabeçalho flutuante e o bottom sheet da tela de rastreamento sumiam atrás
+   do mapa.
+
+   `z-index: 0` num elemento posicionado cria um contexto de empilhamento —
+   os 400 e 1000 do Leaflet passam a valer só dentro do mapa, e qualquer
+   irmão continua desenhando por cima sem precisar declarar z-index nenhum. */
+.leaflet-container {
+  z-index: 0;
+}

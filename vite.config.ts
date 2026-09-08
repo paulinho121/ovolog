@@ -29,6 +29,7 @@ export default defineConfig(() => {
               'motion',
               'lucide-react',
               '@supabase/supabase-js',
+              'leaflet',
             ],
           },
         },

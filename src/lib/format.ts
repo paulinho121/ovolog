@@ -28,7 +28,8 @@ export function moneyAxis(v: number) {
 export const num = (v: number) => v.toLocaleString('pt-BR');
 
 /** 1,2 km — abaixo de 1 km cai para metros, como um app de navegação. */
-export function km(v: number) {
+export function km(v: number | undefined) {
+  if (v === undefined) return '—';
   if (v < 1) return `${Math.round(v * 1000)} m`;
   return `${v.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km`;
 }

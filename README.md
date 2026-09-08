@@ -116,7 +116,8 @@ src/
   components/
     ui/                  botões, campos, sheets, estados, swipe
     layout/chrome.tsx    header, app bar, navegação inferior, barra de ação
-    map/MapCanvas.tsx    mapa estilizado
+    map/MapCanvas.tsx    mapa (Leaflet + OpenStreetMap)
+    map/BuscaEndereco.tsx  localiza o endereço do cliente
     charts/              gráficos em SVG
     domain.tsx           cards com significado de negócio
   screens/               telas agrupadas por domínio
@@ -220,6 +221,45 @@ ser editar política, e não habilitar RLS com o banco em uso.
 A chave `anon` é pública e vai no bundle — é o RLS que protege os dados, não
 o sigilo dela. A `service_role` nunca deve aparecer no cliente.
 
+## Mapa
+
+Leaflet sobre tiles do OpenStreetMap. O provedor está isolado em
+`src/lib/mapa.ts` — trocar por Google, MapTiler ou Mapbox é mexer nesse
+arquivo e em `MapCanvas.tsx`; nenhuma das oito telas que mostram mapa sabe
+qual provedor existe por baixo.
+
+**O servidor público de tiles do OSM é infraestrutura doada e a política de
+uso dele não cobre uso comercial pesado.** Para uma frota pequena o volume
+passa despercebido; conforme crescer, o caminho é um provedor com chave
+(MapTiler e Stadia têm plano gratuito) ou o Google. São duas linhas em
+`mapa.ts`. A atribuição na tela é condição da licença ODbL: pode encolher,
+não pode sumir.
+
+### Coordenadas
+
+`clientes.lat/lng` e `veiculos.lat/lng` são latitude e longitude reais.
+Nulo quer dizer "endereço ainda não geocodificado": o cliente fica fora do
+mapa e continua na lista — nunca é plotado num ponto aproximado.
+
+O endereço vira coordenada no cadastro do cliente, via
+[Nominatim](https://nominatim.openstreetmap.org), o geocodificador do próprio
+OSM: sem chave, no máximo uma busca por segundo. Quem cadastra **escolhe**
+entre os resultados em vez de o app assumir o primeiro — fora das capitais o
+Nominatim erra bastante, e um acerto silencioso na rua errada custa uma
+viagem perdida.
+
+### GPS
+
+`navigator.geolocation.watchPosition`, ligado só durante rota em andamento —
+rastrear fora do expediente seria vigiar, e gastaria bateria à toa.
+
+Sem GPS (túnel, galpão, permissão negada) a tela avisa e **a chegada passa a
+ser confirmada manualmente**. Bloquear a entrega porque o sinal caiu pararia a
+operação por um detalhe de tecnologia.
+
+A distância mostrada é em linha reta (haversine), sempre menor que o caminho
+pela rua. Serve para liberar o check-in, não para prometer horário.
+
 ## Limites desta versão
 
 - **A fila offline vive na memória.** Recarregar a página com alterações
@@ -231,8 +271,11 @@ o sigilo dela. A `service_role` nunca deve aparecer no cliente.
   isso quando fizer sentido.
 - Um pedido criado durante uma visita fica ligado à rota, mas não à parada —
   ele não aparece na lista daquela parada específica.
-- GPS, PIX, envio de comprovante e manutenção de frota são a experiência
-  visual do recurso, não a integração.
+- **O traçado da rota liga as paradas em linha reta**, não pelo caminho das
+  ruas, e a ordem das paradas é a que foi cadastrada — não há otimização de
+  rota. As duas coisas pedem um serviço de rotas (o Google e o Mapbox têm).
+- PIX, envio de comprovante e manutenção de frota são a experiência visual do
+  recurso, não a integração.
 - Só tema claro.
 
 ## Deploy (Vercel)

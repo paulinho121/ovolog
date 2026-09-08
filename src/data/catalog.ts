@@ -48,8 +48,6 @@ const veiculoAusente = (id: string): Vehicle => ({
   capacityBoxes: 0,
   odometer: 0,
   kmToday: 0,
-  x: 50,
-  y: 50,
   lastMaintenance: '',
   fuelLevel: 0,
 });

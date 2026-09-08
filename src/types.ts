@@ -88,9 +88,12 @@ export interface Customer {
   lastPurchaseAt: string | null;
   totalPurchased: number;
   paymentTerms: string;
-  /** Coordenadas no plano do mapa estilizado (0–100). */
-  x: number;
-  y: number;
+  /** Latitude/longitude do endereço.
+   *
+   *  Ausentes enquanto ninguém geocodificou o endereço. O cliente fica fora
+   *  do mapa e continua na lista — melhor do que plotar num ponto inventado. */
+  lat?: number;
+  lng?: number;
 }
 
 /* ----------------------------------------------------------------- Pedidos */
@@ -268,9 +271,9 @@ export interface Vehicle {
   capacityBoxes: number;
   odometer: number;
   kmToday: number;
-  /** Posição no mapa estilizado (0–100). */
-  x: number;
-  y: number;
+  /** Última posição conhecida. Ausente até o veículo reportar GPS. */
+  lat?: number;
+  lng?: number;
   routeId?: string;
   lastMaintenance: string;
   fuelLevel: number;

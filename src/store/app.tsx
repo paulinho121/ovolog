@@ -30,6 +30,7 @@ import type {
   Vehicle,
 } from '../types';
 import { hidratarCatalogo, products, users } from '../data/catalog';
+import { distanciaKm, temCoordenada, type Coord } from '../lib/mapa';
 import { carregarEstado } from '../data/repositorio';
 import * as repo from '../data/repositorio';
 import { available, nextStop, orderTotal, resolveAccountStatus } from '../lib/domain';
@@ -44,10 +45,10 @@ export interface Toast {
   tone: 'ok' | 'info' | 'warn' | 'bad';
 }
 
-export interface Position {
-  x: number;
-  y: number;
-}
+/* A posição do motorista agora é latitude/longitude de verdade, vinda do
+   GPS do aparelho. `undefined` enquanto o navegador não respondeu — ou
+   porque a permissão foi negada, ou porque o sinal ainda não fixou. */
+export type Position = Coord;
 
 interface AppState {
   /* Carga inicial vinda do banco */
@@ -80,10 +81,13 @@ interface AppState {
   returns: StockReturn[];
   notifications: AppNotification[];
 
-  /* GPS simulado */
-  position: Position;
-  /** Distância em km até a próxima parada da rota ativa. */
-  distanceToNextStop: number;
+  /* GPS do aparelho */
+  /** Ausente até o navegador entregar a primeira leitura. */
+  position: Position | undefined;
+  /** Motivo pelo qual não há posição, para a tela poder explicar. */
+  gpsIndisponivel: string | null;
+  /** Distância em km até a próxima parada, ou undefined sem GPS/coordenada. */
+  distanceToNextStop: number | undefined;
   /** O check-in por localização só libera dentro do raio de chegada. */
   isAtNextStop: boolean;
 
@@ -129,7 +133,9 @@ interface AppState {
   addStockMove: (input: { kind: StockMoveKind; productId: string; boxes: number; note: string }) => void;
   receivePurchase: (purchaseId: string) => void;
   createPurchase: (input: Omit<Purchase, 'id' | 'number' | 'status' | 'createdAt'>) => string;
-  createCustomer: (input: Omit<Customer, 'id' | 'balance' | 'lastPurchaseAt' | 'totalPurchased' | 'x' | 'y'>) => string;
+  createCustomer: (
+    input: Omit<Customer, 'id' | 'balance' | 'lastPurchaseAt' | 'totalPurchased'>,
+  ) => string;
   markNotificationsRead: () => void;
 
   /* Toast */
@@ -142,8 +148,6 @@ const AppContext = createContext<AppState | undefined>(undefined);
 
 /** Raio de chegada do check-in por GPS, em km. */
 const ARRIVAL_RADIUS_KM = 0.25;
-/** Escala do mapa estilizado: 1 unidade do plano 0–100 ≈ 0,4 km. */
-const UNITS_TO_KM = 0.4;
 
 let idSeq = 1000;
 const nextId = (prefix: string) => `${prefix}${++idSeq}`;
@@ -174,7 +178,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [pendingSync, setPendingSync] = useState(0);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [position, setPosition] = useState<Position>({ x: 46, y: 52 });
+  const [position, setPosition] = useState<Position | undefined>(undefined);
+  const [gpsIndisponivel, setGpsIndisponivel] = useState<string | null>(null);
 
   const [cart, setCart] = useState<AppState['cart']>({
     customerId: null,
@@ -333,37 +338,64 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return customers.find((c) => c.id === stop.customerId);
   }, [activeRoute, customers]);
 
-  /* GPS simulado: o veículo desliza em direção à próxima parada enquanto a
-     rota está em andamento. Sem provedor externo — a experiência visual é a
-     mesma, e trocar isso por geolocation real é substituir este efeito. */
+  /* GPS do aparelho.
+   *
+   * `watchPosition` mantém o rastreamento ligado enquanto a rota corre, em vez
+   * de perguntar de tempos em tempos: o navegador entrega cada leitura nova e
+   * gasta menos bateria que um `getCurrentPosition` em laço.
+   *
+   * Só liga durante rota em andamento. Rastrear o motorista fora do expediente
+   * seria vigiar, não operar — e queimaria bateria à toa. */
   useEffect(() => {
-    if (!activeRoute || activeRoute.status !== 'em_andamento' || !target) return;
-    const timer = window.setInterval(() => {
-      setPosition((p) => {
-        const dx = target.x - p.x;
-        const dy = target.y - p.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist < 0.4) return { x: target.x, y: target.y };
-        // Passo comprimido de propósito: o trajeto real levaria minutos e a
-        // tela ficaria parada. Assim a chegada acontece em ~10s.
-        const step = Math.min(1.6, dist);
-        return { x: p.x + (dx / dist) * step, y: p.y + (dy / dist) * step };
-      });
-    }, 800);
-    return () => window.clearInterval(timer);
-  }, [activeRoute, target]);
+    if (!activeRoute || activeRoute.status !== 'em_andamento') return;
 
-  /* O marcador do veículo no mapa segue a posição simulada. */
+    if (!('geolocation' in navigator)) {
+      setGpsIndisponivel('Este aparelho não tem GPS disponível no navegador.');
+      return;
+    }
+
+    const id = navigator.geolocation.watchPosition(
+      (leitura) => {
+        setGpsIndisponivel(null);
+        setPosition({ lat: leitura.coords.latitude, lng: leitura.coords.longitude });
+      },
+      (erro) => {
+        /* Falhar aqui é comum e não é excepcional: túnel, galpão, prédio alto.
+           A tela avisa e segue funcionando — a conferência de chegada passa a
+           ser manual, que é como era antes de existir GPS. */
+        setGpsIndisponivel(
+          erro.code === erro.PERMISSION_DENIED
+            ? 'Permissão de localização negada. Libere no navegador para o check-in automático.'
+            : 'Sem sinal de GPS agora. A chegada precisa ser confirmada manualmente.',
+        );
+      },
+      {
+        enableHighAccuracy: true,
+        // Numa entrega, posição de um minuto atrás já não diz onde o veículo
+        // está. Melhor esperar leitura nova do que desenhar a antiga.
+        maximumAge: 10_000,
+        timeout: 20_000,
+      },
+    );
+
+    return () => navigator.geolocation.clearWatch(id);
+  }, [activeRoute]);
+
+  /* O marcador do veículo no mapa segue a posição do motorista. */
   useEffect(() => {
-    if (!activeRoute) return;
+    if (!activeRoute || !position) return;
     setVehicles((vs) =>
-      vs.map((v) => (v.id === activeRoute.vehicleId ? { ...v, x: position.x, y: position.y } : v)),
+      vs.map((v) =>
+        v.id === activeRoute.vehicleId ? { ...v, lat: position.lat, lng: position.lng } : v,
+      ),
     );
   }, [position, activeRoute]);
 
+  /* Distância em linha reta — sempre menor que o caminho pela rua. Serve para
+     liberar o check-in, não para prometer horário de chegada. */
   const distanceToNextStop = useMemo(() => {
-    if (!target) return 0;
-    return Math.hypot(target.x - position.x, target.y - position.y) * UNITS_TO_KM;
+    if (!target || !position || !temCoordenada(target)) return undefined;
+    return distanciaKm(position, target);
   }, [target, position]);
 
   /* -------------------------------------------------------- Carrinho */
@@ -896,15 +928,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const createCustomer = useCallback<AppState['createCustomer']>(
     (input) => {
       const id = nextId('c');
+      /* Sem coordenada inventada: `input` traz lat/lng quando o cadastro
+         localizou o endereço, e não traz quando não localizou. Cliente sem
+         coordenada fica fora do mapa e continua na lista — a versão anterior
+         sorteava uma posição, o que colocava cliente real em rua errada. */
       const cliente: Customer = {
         ...input,
         id,
         balance: 0,
         lastPurchaseAt: null,
         totalPurchased: 0,
-        // Posição aproximada no mapa — na versão real viria do GPS/CEP.
-        x: 20 + Math.round(Math.random() * 60),
-        y: 20 + Math.round(Math.random() * 60),
       };
       commit(
         () => setCustomers((cs) => [cliente, ...cs]),
@@ -942,9 +975,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       connection, pendingSync, setConnection, syncNow,
       customers, orders, routes, vehicles, stock, stockMoves, purchases,
       accounts, cashEntries, incidents, returns, notifications,
-      position,
+      position, gpsIndisponivel,
       distanceToNextStop,
-      isAtNextStop: distanceToNextStop <= ARRIVAL_RADIUS_KM,
+      isAtNextStop: distanceToNextStop !== undefined && distanceToNextStop <= ARRIVAL_RADIUS_KM,
       activeRoute,
       cart, startCart, setCartQty, setDiscount, setPayment, clearCart, submitOrder,
       startRoute, arriveAtStop, completeStop, markStopNotServed, finishRoute,
@@ -958,7 +991,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       session, signIn, signOut, connection, pendingSync, setConnection, syncNow,
       customers, orders, routes, vehicles, stock, stockMoves, purchases,
       accounts, cashEntries, incidents, returns, notifications,
-      position, distanceToNextStop, activeRoute,
+      position, gpsIndisponivel, distanceToNextStop, activeRoute,
       cart, startCart, setCartQty, setDiscount, setPayment, clearCart, submitOrder,
       startRoute, arriveAtStop, completeStop, markStopNotServed, finishRoute,
       confirmDelivery, registerIncident, registerReturn,

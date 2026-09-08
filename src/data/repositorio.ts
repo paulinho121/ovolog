@@ -47,6 +47,18 @@ export interface EstadoRemoto {
 }
 
 const num = (v: unknown) => Number(v ?? 0);
+
+/* Coordenada é o único campo numérico que NÃO pode cair para zero quando vem
+   nulo: lat 0 / lng 0 é um ponto real, no oceano na costa da África. Nulo
+   aqui quer dizer "não geocodificado", e precisa continuar ausente. */
+function coord(r: Record<string, unknown>): { lat?: number; lng?: number } {
+  const lat = Number(r.lat);
+  const lng = Number(r.lng);
+  if (r.lat === null || r.lng === null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return {};
+  }
+  return { lat, lng };
+}
 const iso = (v: unknown) => (v ? new Date(String(v)).toISOString() : undefined);
 
 /** Um `date` do Postgres vira meio-dia local, não meia-noite UTC — assim a
@@ -141,8 +153,7 @@ export async function carregarEstado(): Promise<EstadoRemoto> {
       creditLimit: num(r.limite_credito),
       totalPurchased: num(r.total_comprado),
       paymentTerms: String(r.condicao_pagamento ?? 'À vista'),
-      x: num(r.x),
-      y: num(r.y),
+      ...coord(r),
       // Derivada dos pedidos, como no restante do app — o cadastro não guarda
       // essa data para os dois não saírem de sincronia.
       lastPurchaseAt:
@@ -164,8 +175,7 @@ export async function carregarEstado(): Promise<EstadoRemoto> {
       capacityBoxes: num(r.capacidade_caixas),
       odometer: num(r.odometro),
       kmToday: num(r.km_hoje),
-      x: num(r.x),
-      y: num(r.y),
+      ...coord(r),
       routeId: r.rota_id ? String(r.rota_id) : undefined,
       lastMaintenance: String(r.ultima_manutencao ?? ''),
       fuelLevel: num(r.nivel_combustivel),
@@ -405,8 +415,8 @@ export async function salvarCliente(cliente: Customer) {
       limite_credito: cliente.creditLimit,
       total_comprado: cliente.totalPurchased,
       condicao_pagamento: cliente.paymentTerms,
-      x: cliente.x,
-      y: cliente.y,
+      lat: cliente.lat ?? null,
+      lng: cliente.lng ?? null,
       atualizado_em: new Date().toISOString(),
     }),
   );
@@ -470,7 +480,12 @@ export async function atualizarVeiculo(v: Vehicle) {
     'atualizar veículo',
     supabase
       .from('veiculos')
-      .update({ status: v.status, rota_id: v.routeId ?? null, x: v.x, y: v.y })
+      .update({
+        status: v.status,
+        rota_id: v.routeId ?? null,
+        lat: v.lat ?? null,
+        lng: v.lng ?? null,
+      })
       .eq('id', v.id),
   );
 }

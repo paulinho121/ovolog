@@ -33,6 +33,7 @@ import { MapCanvas } from '../components/map/MapCanvas';
 import { useApp, useCustomer, useOrder, useRoute } from '../store/app';
 import { useNav, useParams } from '../store/navigation';
 import { products, userById, vehicleById } from '../data/catalog';
+import { temCoordenada } from '../lib/mapa';
 import { nextStop, orderBoxes, orderTotal, routeSummary } from '../lib/domain';
 import { dateTime, km, money, num, time } from '../lib/format';
 import type { IncidentKind, PaymentMethod, ReturnReason } from '../types';
@@ -45,7 +46,8 @@ import type { IncidentKind, PaymentMethod, ReturnReason } from '../types';
 export function CheckInScreen() {
   const { routeId, stopId } = useParams();
   const route = useRoute(String(routeId));
-  const { customers, arriveAtStop, isAtNextStop, distanceToNextStop, position } = useApp();
+  const { customers, arriveAtStop, isAtNextStop, distanceToNextStop, position, gpsIndisponivel } =
+    useApp();
   const { navigate, replace } = useNav();
   const [manualOpen, setManualOpen] = useState(false);
 
@@ -68,7 +70,11 @@ export function CheckInScreen() {
             <MapCanvas
               stops={[{ id: stop.id, customer, status: stop.status, sequence: stop.sequence }]}
               position={position}
-              focus={{ x: customer.x, y: customer.y, zoom: 4 }}
+              focus={
+                temCoordenada(customer)
+                  ? { lat: customer.lat, lng: customer.lng, zoom: 17 }
+                  : undefined
+              }
               className="h-48 w-full"
               interactive={false}
             />
@@ -95,14 +101,21 @@ export function CheckInScreen() {
             </span>
             {isAtNextStop
               ? 'Você está no local do cliente'
-              : `A ${km(distanceToNextStop)} do local`}
+              : distanceToNextStop === undefined
+                ? (gpsIndisponivel ?? 'Localizando…')
+                : `A ${km(distanceToNextStop)} do local`}
           </div>
         </div>
       </Screen>
 
       <StickyAction>
         <div className="space-y-2">
-          <Button size="lg" block disabled={!isAtNextStop} onClick={confirm}>
+          <Button
+          size="lg"
+          block
+          disabled={!isAtNextStop && distanceToNextStop !== undefined}
+          onClick={confirm}
+        >
             Confirmar chegada
           </Button>
           {!isAtNextStop && (

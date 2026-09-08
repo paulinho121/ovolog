@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
   Building2,
-  ChevronRight,
   MapPin,
   MessageCircle,
   Phone,
@@ -28,6 +27,7 @@ import {
   Tabs,
 } from '../components/ui/forms';
 import { Sheet } from '../components/ui/overlays';
+import { BuscaEndereco } from '../components/map/BuscaEndereco';
 import { EmptyState } from '../components/ui/states';
 import {
   CUSTOMER_STATUS,
@@ -518,6 +518,8 @@ export function CustomerNewScreen() {
     paymentTerms: 'À vista',
     creditLimit: 3000,
     status: 'novo' as CustomerStatus,
+    lat: undefined as number | undefined,
+    lng: undefined as number | undefined,
   });
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
@@ -584,23 +586,6 @@ export function CustomerNewScreen() {
 
           {step === 2 && (
             <>
-              {/* O GPS preenche a localização (REGRA 7) — aqui, simulado. */}
-              <button
-                onClick={() => {
-                  set('address', 'Rua XV de Novembro, 210');
-                  set('district', 'Centro');
-                }}
-                className="flex w-full items-center gap-3 rounded-card border border-brand-200 bg-brand-50 p-4 text-left active:bg-brand-100"
-              >
-                <span className="grid size-10 place-items-center rounded-xl bg-brand-600 text-white">
-                  <MapPin size={18} />
-                </span>
-                <span className="flex-1">
-                  <span className="block font-semibold text-shell-900">Usar minha localização</span>
-                  <span className="text-meta text-shell-600">Preenche endereço e bairro</span>
-                </span>
-                <ChevronRight size={18} className="text-shell-400" />
-              </button>
               <Field label="Endereço">
                 <Input
                   value={form.address}
@@ -615,6 +600,24 @@ export function CustomerNewScreen() {
                   placeholder="Centro"
                 />
               </Field>
+
+              <BuscaEndereco
+                endereco={form.address}
+                bairro={form.district}
+                coordenada={
+                  form.lat !== undefined && form.lng !== undefined
+                    ? { lat: form.lat, lng: form.lng }
+                    : undefined
+                }
+                onEscolher={(c) => setForm((f) => ({ ...f, lat: c?.lat, lng: c?.lng }))}
+                onPreencherEndereco={(rua, bairro) =>
+                  setForm((f) => ({
+                    ...f,
+                    address: rua || f.address,
+                    district: bairro || f.district,
+                  }))
+                }
+              />
             </>
           )}
 

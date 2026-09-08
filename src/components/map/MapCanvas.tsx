@@ -1,41 +1,28 @@
-import { Crosshair, Layers } from 'lucide-react';
-import { useMemo } from 'react';
+import { Crosshair, MapPinOff } from 'lucide-react';
+import { useEffect, useMemo, useRef } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { cn } from '../../lib/utils';
 import type { Customer, RouteStop, Vehicle } from '../../types';
-import type { Position } from '../../store/app';
+import {
+  CENTRO_PADRAO,
+  TILE_ATTRIBUTION,
+  TILE_MAX_ZOOM,
+  TILE_URL,
+  ZOOM_PADRAO,
+  temCoordenada,
+  type Coord,
+} from '../../lib/mapa';
 
-/* Mapa estilizado desenhado em SVG num plano 0–100.
-
-   Não há provedor de mapas: o protótipo entrega a *experiência* de navegação
-   (traçado, paradas numeradas, posição pulsante, veículos em movimento) sem
-   depender de rede — o que também é coerente com a operação offline. Trocar
-   por um mapa real significa substituir só este componente: as coordenadas
-   x/y viram lat/lng e o resto do app não muda. */
-
-/* Malha viária fixa — desenhada à mão para parecer uma cidade, não um xadrez. */
-const ARTERIALS = [
-  'M0 22 H100',
-  'M0 47 H100',
-  'M0 71 H100',
-  'M24 0 V100',
-  'M53 0 V100',
-  'M79 0 V100',
-  'M0 92 Q30 78 52 71 T100 44',
-];
-
-const STREETS = [
-  'M0 10 H100', 'M0 34 H100', 'M0 59 H100', 'M0 83 H100',
-  'M12 0 V100', 'M38 0 V100', 'M66 0 V100', 'M91 0 V100',
-  'M24 34 L38 10', 'M53 59 L66 34', 'M79 83 L91 59',
-];
-
-const BLOCKS = [
-  { x: 26, y: 24, w: 25, h: 21 }, { x: 55, y: 24, w: 22, h: 21 },
-  { x: 26, y: 49, w: 25, h: 20 }, { x: 55, y: 49, w: 22, h: 20 },
-  { x: 2, y: 24, w: 20, h: 21 }, { x: 81, y: 24, w: 17, h: 21 },
-  { x: 2, y: 49, w: 20, h: 20 }, { x: 81, y: 49, w: 17, h: 20 },
-  { x: 26, y: 2, w: 25, h: 18 }, { x: 55, y: 2, w: 22, h: 18 },
-];
+/* Mapa real, sobre tiles do OpenStreetMap (ver src/lib/mapa.ts).
+ *
+ * A interface é a mesma de quando o mapa era um SVG desenhado à mão — as oito
+ * telas que usam este componente não sabem qual provedor existe por baixo, e é
+ * isso que mantém a troca para o Google contida em dois arquivos.
+ *
+ * O Leaflet é imperativo e o React é declarativo: a saída é criar o mapa uma
+ * vez num ref e reconciliar as camadas em efeitos, nunca recriar o mapa a cada
+ * render — recriar faz o mapa piscar e tira o mapa da mão de quem arrasta. */
 
 export interface MapStop {
   id: string;
@@ -44,12 +31,78 @@ export interface MapStop {
   sequence: number;
 }
 
+/* ------------------------------------------------------------- Marcadores */
+
+/* Os marcadores são HTML (divIcon), não imagens: herdam as cores e o tipo do
+   design system e escalam sem borrar. Também evita o problema clássico dos
+   ícones padrão do Leaflet, que quebram sob bundler por causa do caminho das
+   imagens. */
+
+function iconeParada(stop: MapStop) {
+  const done = stop.status === 'concluida';
+  const failed = stop.status === 'nao_atendida';
+  const current = stop.status === 'a_caminho' || stop.status === 'chegou';
+
+  const cor = done
+    ? 'bg-[#16A34A] text-white'
+    : failed
+      ? 'bg-[#B91C1C] text-white'
+      : current
+        ? 'bg-[#C2560A] text-white'
+        : 'bg-white text-[#504B46]';
+
+  const tamanho = current ? 34 : 28;
+  const rotulo = done ? '&#10003;' : failed ? '!' : String(stop.sequence);
+
+  return L.divIcon({
+    className: 'ovolog-marcador',
+    iconSize: [tamanho, tamanho],
+    iconAnchor: [tamanho / 2, tamanho / 2],
+    html:
+      '<span class="grid size-full place-items-center rounded-full text-[13px] font-bold ' +
+      'shadow-raised ring-2 ring-white ' +
+      cor +
+      '">' +
+      rotulo +
+      '</span>',
+  });
+}
+
+function iconeVeiculo(v: Vehicle) {
+  const cor =
+    v.status === 'em_rota' ? '#1D4ED8' : v.status === 'manutencao' ? '#A16207' : '#6B6660';
+  return L.divIcon({
+    className: 'ovolog-marcador',
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+    html:
+      '<span class="grid size-full place-items-center rounded-full text-[14px] ' +
+      'shadow-raised ring-2 ring-white" style="background:' +
+      cor +
+      '">&#128656;</span>',
+  });
+}
+
+const iconePosicao = () =>
+  L.divIcon({
+    className: 'ovolog-marcador',
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+    html:
+      '<span class="relative block size-full">' +
+      '<span class="gps-ping absolute inset-0 rounded-full bg-info-500"></span>' +
+      '<span class="relative block size-full rounded-full border-[3px] border-white bg-info-500 shadow-raised"></span>' +
+      '</span>',
+  });
+
+/* ------------------------------------------------------------------ Mapa */
+
 export function MapCanvas({
   stops = [],
   position,
   vehicles = [],
   className,
-  /** Recorte do plano — usado para "aproximar" na parada atual. */
+  /** Centraliza e aproxima num ponto — usado para seguir o motorista. */
   focus,
   showLabels = false,
   onStopClick,
@@ -57,229 +110,192 @@ export function MapCanvas({
   interactive = true,
 }: {
   stops?: MapStop[];
-  position?: Position;
+  position?: Coord;
   vehicles?: Vehicle[];
   className?: string;
-  focus?: { x: number; y: number; zoom: number };
+  focus?: { lat: number; lng: number; zoom: number };
   showLabels?: boolean;
   onStopClick?: (stopId: string) => void;
   onRecenter?: () => void;
   interactive?: boolean;
 }) {
-  const viewBox = useMemo(() => {
-    if (!focus) return '0 0 100 100';
-    const size = 100 / focus.zoom;
-    const x = Math.min(100 - size, Math.max(0, focus.x - size / 2));
-    const y = Math.min(100 - size, Math.max(0, focus.y - size / 2));
-    return `${x} ${y} ${size} ${size}`;
-  }, [focus]);
+  const container = useRef<HTMLDivElement>(null);
+  const mapa = useRef<L.Map | null>(null);
+  const camadas = useRef<L.LayerGroup | null>(null);
 
-  /* O traçado liga as paradas na ordem; o trecho já cumprido fica sólido e
-     apagado, o que falta fica tracejado na cor da marca — a mesma convenção
-     dos apps de navegação. */
-  const { donePath, todoPath } = useMemo(() => {
-    if (stops.length < 2) return { donePath: '', todoPath: '' };
-    const pts = stops.map((s) => `${s.customer.x} ${s.customer.y}`);
-    const firstPending = stops.findIndex(
-      (s) => s.status !== 'concluida' && s.status !== 'nao_atendida',
-    );
-    const cut = firstPending === -1 ? stops.length : Math.max(1, firstPending);
-    return {
-      donePath: `M${pts.slice(0, cut).join(' L')}`,
-      todoPath: `M${pts.slice(Math.max(0, cut - 1)).join(' L')}`,
+  /* O enquadramento automático vale só na primeira carga: depois disso quem
+     manda é quem está olhando. Reenquadrar a cada atualização de GPS puxaria o
+     mapa da mão do motorista a cada poucos segundos. */
+  const jaEnquadrou = useRef(false);
+
+  /* Só entra no mapa quem tem coordenada. Cliente sem geocodificar fica de
+     fora — some do mapa e continua na lista. */
+  const paradas = useMemo(() => stops.filter((s) => temCoordenada(s.customer)), [stops]);
+  const frota = useMemo(() => vehicles.filter(temCoordenada), [vehicles]);
+
+  const semCoordenada = stops.length > 0 && paradas.length === 0;
+
+  /* --------------------------------------------------- Criação (uma vez) */
+  useEffect(() => {
+    if (!container.current || mapa.current) return;
+    const alvo = container.current;
+
+    const m = L.map(alvo, {
+      center: [CENTRO_PADRAO.lat, CENTRO_PADRAO.lng],
+      zoom: ZOOM_PADRAO,
+      zoomControl: false,
+      // Mapa decorativo (card da Home, resumo da rota) não deve roubar o gesto
+      // de rolagem da página nem responder a toque.
+      dragging: interactive,
+      scrollWheelZoom: interactive,
+      doubleClickZoom: interactive,
+      touchZoom: interactive,
+      boxZoom: interactive,
+      keyboard: interactive,
+    });
+
+    L.tileLayer(TILE_URL, {
+      attribution: TILE_ATTRIBUTION,
+      maxZoom: TILE_MAX_ZOOM,
+    }).addTo(m);
+
+    if (interactive) L.control.zoom({ position: 'bottomright' }).addTo(m);
+
+    camadas.current = L.layerGroup().addTo(m);
+    mapa.current = m;
+
+    /* O Leaflet mede o container ao criar. Quando o mapa nasce dentro de algo
+       que ainda vai crescer (card em sheet, painel que abre), a medida sai
+       errada e os tiles ficam cinza até alguém mexer no mapa. */
+    const ro = new ResizeObserver(() => m.invalidateSize());
+    ro.observe(alvo);
+
+    return () => {
+      ro.disconnect();
+      m.remove();
+      mapa.current = null;
+      camadas.current = null;
     };
-  }, [stops]);
+  }, [interactive]);
 
-  const scale = focus ? 1 / focus.zoom : 1;
+  /* ------------------------------------------------------------ Camadas */
+  useEffect(() => {
+    const m = mapa.current;
+    const grupo = camadas.current;
+    if (!m || !grupo) return;
+
+    grupo.clearLayers();
+
+    /* Traçado: o trecho já cumprido fica sólido e apagado, o que falta fica
+       tracejado na cor da marca — a convenção dos apps de navegação.
+
+       São segmentos retos entre paradas, não o caminho pela rua: desenhar rua
+       exige um serviço de rotas, que fica para quando entrar o Google. */
+    if (paradas.length >= 2) {
+      const pts = paradas.map((s) => [s.customer.lat, s.customer.lng] as [number, number]);
+      const primeiraPendente = paradas.findIndex(
+        (s) => s.status !== 'concluida' && s.status !== 'nao_atendida',
+      );
+      const corte = primeiraPendente === -1 ? paradas.length : Math.max(1, primeiraPendente);
+
+      const feito = pts.slice(0, corte);
+      const falta = pts.slice(Math.max(0, corte - 1));
+
+      if (feito.length >= 2) {
+        L.polyline(feito, { color: '#B8B4AA', weight: 5, opacity: 0.9 }).addTo(grupo);
+      }
+      if (falta.length >= 2) {
+        L.polyline(falta, { color: '#FFFFFF', weight: 8, opacity: 0.9 }).addTo(grupo);
+        L.polyline(falta, { color: '#C2560A', weight: 5, dashArray: '10 8' }).addTo(grupo);
+      }
+    }
+
+    for (const s of paradas) {
+      const marcador = L.marker([s.customer.lat, s.customer.lng], {
+        icon: iconeParada(s),
+        keyboard: Boolean(onStopClick),
+        interactive: Boolean(onStopClick) || showLabels,
+      }).addTo(grupo);
+
+      if (showLabels) {
+        marcador.bindTooltip(s.customer.tradeName, {
+          direction: 'top',
+          offset: [0, -16],
+          permanent: true,
+          className: 'ovolog-rotulo',
+        });
+      }
+      if (onStopClick) marcador.on('click', () => onStopClick(s.id));
+    }
+
+    for (const v of frota) {
+      L.marker([v.lat, v.lng], { icon: iconeVeiculo(v), interactive: false })
+        .bindTooltip(v.name + ' • ' + v.plate, { direction: 'top', offset: [0, -14] })
+        .addTo(grupo);
+    }
+
+    if (position) {
+      L.marker([position.lat, position.lng], {
+        icon: iconePosicao(),
+        interactive: false,
+        zIndexOffset: 1000,
+      }).addTo(grupo);
+    }
+  }, [paradas, frota, position, showLabels, onStopClick]);
+
+  /* ------------------------------------------------------ Enquadramento */
+  useEffect(() => {
+    const m = mapa.current;
+    if (!m) return;
+
+    if (focus) {
+      m.setView([focus.lat, focus.lng], focus.zoom, { animate: true });
+      return;
+    }
+
+    if (jaEnquadrou.current) return;
+
+    const pontos: [number, number][] = [
+      ...paradas.map((s) => [s.customer.lat, s.customer.lng] as [number, number]),
+      ...frota.map((v) => [v.lat, v.lng] as [number, number]),
+    ];
+    if (position) pontos.push([position.lat, position.lng]);
+
+    if (pontos.length === 0) return;
+    jaEnquadrou.current = true;
+
+    if (pontos.length === 1) {
+      m.setView(pontos[0], 15);
+    } else {
+      m.fitBounds(L.latLngBounds(pontos), { padding: [40, 40], maxZoom: 16 });
+    }
+  }, [focus, paradas, frota, position]);
 
   return (
     <div className={cn('relative overflow-hidden bg-[#EFEDE8]', className)}>
-      <svg
-        viewBox={viewBox}
-        preserveAspectRatio="xMidYMid slice"
-        className="size-full"
-        role="img"
-        aria-label="Mapa da operação"
-      >
-        {/* Água e áreas verdes dão referência visual ao traçado. */}
-        <path d="M0 100 L0 74 Q18 68 30 82 Q42 96 56 100 Z" fill="#CFE0EE" />
-        <rect x="4" y="4" width="16" height="14" rx="3" fill="#DCE8DA" />
-        <rect x="84" y="72" width="14" height="16" rx="3" fill="#DCE8DA" />
+      <div ref={container} className="size-full" role="img" aria-label="Mapa da operação" />
 
-        {BLOCKS.map((b, i) => (
-          <rect key={i} x={b.x} y={b.y} width={b.w} height={b.h} rx="1.2" fill="#E6E3DC" />
-        ))}
-
-        {/* Ruas: casing escuro por baixo, asfalto claro por cima. */}
-        <g stroke="#DEDAD1" fill="none" strokeLinecap="round">
-          {STREETS.map((d, i) => (
-            <path key={i} d={d} strokeWidth={1.4 * scale} />
-          ))}
-          {ARTERIALS.map((d, i) => (
-            <path key={i} d={d} strokeWidth={3.4 * scale} />
-          ))}
-        </g>
-        <g stroke="#FFFFFF" fill="none" strokeLinecap="round">
-          {STREETS.map((d, i) => (
-            <path key={i} d={d} strokeWidth={0.9 * scale} />
-          ))}
-          {ARTERIALS.map((d, i) => (
-            <path key={i} d={d} strokeWidth={2.6 * scale} />
-          ))}
-        </g>
-
-        {/* Traçado da rota */}
-        {donePath && (
-          <path
-            d={donePath}
-            fill="none"
-            stroke="#B8B4AA"
-            strokeWidth={1.6 * scale}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        )}
-        {todoPath && (
-          <>
-            <path
-              d={todoPath}
-              fill="none"
-              stroke="#FFFFFF"
-              strokeWidth={2.8 * scale}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d={todoPath}
-              fill="none"
-              stroke="#C2560A"
-              strokeWidth={1.8 * scale}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray={`${2.4 * scale} ${1.8 * scale}`}
-            />
-          </>
-        )}
-
-        {/* Paradas */}
-        {stops.map((s) => {
-          const done = s.status === 'concluida';
-          const failed = s.status === 'nao_atendida';
-          const current = s.status === 'a_caminho' || s.status === 'chegou';
-          const fill = done ? '#16A34A' : failed ? '#B91C1C' : current ? '#C2560A' : '#FFFFFF';
-          const text = done || failed || current ? '#FFFFFF' : '#504B46';
-          const r = (current ? 3.4 : 2.8) * scale;
-          return (
-            <g
-              key={s.id}
-              onClick={onStopClick ? () => onStopClick(s.id) : undefined}
-              className={onStopClick ? 'cursor-pointer' : undefined}
-            >
-              <circle cx={s.customer.x} cy={s.customer.y} r={r + 0.7 * scale} fill="#FFFFFF" />
-              <circle
-                cx={s.customer.x}
-                cy={s.customer.y}
-                r={r}
-                fill={fill}
-                stroke={done || failed || current ? 'none' : '#B8B4AA'}
-                strokeWidth={0.5 * scale}
-              />
-              <text
-                x={s.customer.x}
-                y={s.customer.y + 1.15 * scale}
-                textAnchor="middle"
-                fontSize={3.2 * scale}
-                fontWeight="700"
-                fill={text}
-              >
-                {done ? '✓' : s.sequence}
-              </text>
-              {showLabels && (
-                <text
-                  x={s.customer.x}
-                  y={s.customer.y - (r + 1.6 * scale)}
-                  textAnchor="middle"
-                  fontSize={2.6 * scale}
-                  fontWeight="600"
-                  fill="#33302C"
-                  stroke="#FFFFFF"
-                  strokeWidth={0.7 * scale}
-                  paintOrder="stroke"
-                >
-                  {s.customer.tradeName}
-                </text>
-              )}
-            </g>
-          );
-        })}
-
-        {/* Outros veículos da frota */}
-        {vehicles.map((v) => (
-          <g key={v.id}>
-            <circle cx={v.x} cy={v.y} r={3 * scale} fill="#FFFFFF" />
-            <circle
-              cx={v.x}
-              cy={v.y}
-              r={2.4 * scale}
-              fill={v.status === 'em_rota' ? '#1D4ED8' : v.status === 'manutencao' ? '#A16207' : '#6B6660'}
-            />
-            <text
-              x={v.x}
-              y={v.y + 0.9 * scale}
-              textAnchor="middle"
-              fontSize={2.6 * scale}
-              fill="#FFFFFF"
-            >
-              🚐
-            </text>
-          </g>
-        ))}
-      </svg>
-
-      {/* Posição atual — fora do SVG para o pulso usar animação CSS. */}
-      {position && (
-        <div
-          className="pointer-events-none absolute"
-          style={{
-            left: `${percentIn(position.x, viewBox, 'x')}%`,
-            top: `${percentIn(position.y, viewBox, 'y')}%`,
-            transform: 'translate(-50%, -50%)',
-            transition: 'left 900ms linear, top 900ms linear',
-          }}
-        >
-          <span className="gps-ping absolute inset-0 rounded-full bg-info-500" />
-          <span className="relative block size-4 rounded-full border-[3px] border-white bg-info-500 shadow-raised" />
+      {semCoordenada && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[500] flex items-center gap-2 bg-white/95 px-3 py-2">
+          <MapPinOff size={16} className="shrink-0 text-shell-500" />
+          <p className="text-micro text-shell-600">
+            {stops.length === 1
+              ? 'Este cliente ainda não tem endereço localizado no mapa.'
+              : `${stops.length} paradas sem endereço localizado.`}{' '}
+            Edite o cliente para corrigir.
+          </p>
         </div>
       )}
 
-      {interactive && (
-        <div className="absolute right-3 top-3 flex flex-col gap-2">
-          {onRecenter && (
-            <button
-              onClick={onRecenter}
-              aria-label="Centralizar no meu local"
-              className="grid size-11 place-items-center rounded-xl border border-shell-200 bg-white/95 text-shell-700 shadow-raised active:bg-shell-100"
-            >
-              <Crosshair size={18} />
-            </button>
-          )}
-          <button
-            aria-label="Camadas do mapa"
-            className="grid size-11 place-items-center rounded-xl border border-shell-200 bg-white/95 text-shell-700 shadow-raised active:bg-shell-100"
-          >
-            <Layers size={18} />
-          </button>
-        </div>
+      {interactive && onRecenter && (
+        <button
+          onClick={onRecenter}
+          aria-label="Centralizar no meu local"
+          className="absolute right-3 top-3 z-[500] grid size-11 place-items-center rounded-xl border border-shell-200 bg-white/95 text-shell-700 shadow-raised active:bg-shell-100"
+        >
+          <Crosshair size={18} />
+        </button>
       )}
     </div>
   );
-}
-
-/* Converte a coordenada do plano para porcentagem dentro do viewBox atual,
-   para posicionar o marcador HTML por cima do SVG. */
-function percentIn(value: number, viewBox: string, axis: 'x' | 'y') {
-  const [vx, vy, w, h] = viewBox.split(' ').map(Number);
-  const origin = axis === 'x' ? vx : vy;
-  const size = axis === 'x' ? w : h;
-  return ((value - origin) / size) * 100;
 }

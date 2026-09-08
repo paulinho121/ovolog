@@ -27,6 +27,7 @@ import { MapCanvas, type MapStop } from '../components/map/MapCanvas';
 import { useApp, useRoute } from '../store/app';
 import { useNav, useParams } from '../store/navigation';
 import { products, userById, vehicleById } from '../data/catalog';
+import { temCoordenada } from '../lib/mapa';
 import {
   nextStop,
   orderTotal,
@@ -398,7 +399,9 @@ export function RouteMapScreen() {
         position={position}
         vehicles={vehicles.filter((v) => v.id !== route.vehicleId && v.status === 'em_rota')}
         className="absolute inset-0"
-        focus={followMe ? { x: position.x, y: position.y, zoom: 2.2 } : undefined}
+        focus={
+          followMe && position ? { lat: position.lat, lng: position.lng, zoom: 16 } : undefined
+        }
         onRecenter={() => setFollowMe((v) => !v)}
         onStopClick={(id) => {
           const s = route.stops.find((x) => x.id === id);
@@ -574,7 +577,11 @@ export function NextStopScreen() {
           <Card className="overflow-hidden">
             <MapCanvas
               stops={[{ id: stop.id, customer, status: stop.status, sequence: stop.sequence }]}
-              focus={{ x: customer.x, y: customer.y, zoom: 3 }}
+              focus={
+                temCoordenada(customer)
+                  ? { lat: customer.lat, lng: customer.lng, zoom: 16 }
+                  : undefined
+              }
               className="h-40 w-full"
               interactive={false}
             />
@@ -616,10 +623,14 @@ export function NextStopScreen() {
           <Button
             size="lg"
             block
-            disabled={!isAtNextStop}
+            disabled={!isAtNextStop && distanceToNextStop !== undefined}
             onClick={() => navigate('checkin', { stopId: stop.id, routeId: route.id })}
           >
-            {isAtNextStop ? 'Confirmar chegada' : `Aproxime-se — ${km(distanceToNextStop)}`}
+            {isAtNextStop
+              ? 'Confirmar chegada'
+              : distanceToNextStop === undefined
+                ? 'Confirmar chegada (sem GPS)'
+                : `Aproxime-se — ${km(distanceToNextStop)}`}
           </Button>
           <Button variant="ghost" size="md" block onClick={() => setSkipOpen(true)}>
             Não foi possível atender
