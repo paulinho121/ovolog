@@ -1,1 +1,217 @@
 @import "tailwindcss";
+
+/* ==========================================================================
+   OVOLOG — Design System mobile-first
+   Identidade: casca de ovo (fundo quente), gema (ação), logística (status).
+   ========================================================================== */
+
+@theme {
+  /* -- Marca (gema / âmbar queimado) ------------------------------------ */
+  --color-brand-50: #fff8ed;
+  --color-brand-100: #ffefd4;
+  --color-brand-200: #fedca8;
+  --color-brand-300: #fdc271;
+  --color-brand-400: #fba138;
+  --color-brand-500: #f98a12;
+  --color-brand-600: #e36f08;
+  --color-brand-700: #c2560a; /* ação principal — 4.6:1 sobre branco */
+  --color-brand-800: #96400e;
+  --color-brand-900: #7a360f;
+
+  /* -- Neutros quentes (casca) ------------------------------------------ */
+  --color-shell-50: #faf9f7;
+  --color-shell-100: #f6f5f2;
+  --color-shell-200: #ecebe6;
+  --color-shell-300: #dedbd3;
+  --color-shell-400: #b8b4aa;
+  --color-shell-500: #8a8580;
+  --color-shell-600: #6b6660;
+  --color-shell-700: #504b46;
+  --color-shell-800: #33302c;
+  --color-shell-900: #1c1917;
+
+  /* -- Status ------------------------------------------------------------ */
+  --color-ok-50: #dcfce7;
+  --color-ok-500: #16a34a;
+  --color-ok-700: #15803d;
+  --color-warn-50: #fef9c3;
+  --color-warn-500: #eab308;
+  --color-warn-700: #a16207;
+  --color-bad-50: #fee2e2;
+  --color-bad-500: #ef4444;
+  --color-bad-700: #b91c1c;
+  --color-info-50: #dbeafe;
+  --color-info-500: #3b82f6;
+  --color-info-700: #1d4ed8;
+
+  /* -- Séries de gráfico (validadas: CVD + contraste) -------------------- */
+  --color-series-1: #2a78d6;
+  --color-series-2: #eb6834;
+  --color-series-3: #1baf7a;
+
+  /* -- Tipografia -------------------------------------------------------- */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  --text-display: 1.75rem;   /* 28px — títulos de tela */
+  --text-display--line-height: 2.125rem;
+  --text-display--letter-spacing: -0.02em;
+  --text-title: 1.5rem;      /* 24px */
+  --text-title--line-height: 1.875rem;
+  --text-title--letter-spacing: -0.018em;
+  --text-subtitle: 1.0625rem; /* 17px */
+  --text-subtitle--line-height: 1.5rem;
+  --text-body: 0.9375rem;    /* 15px */
+  --text-body--line-height: 1.375rem;
+  --text-meta: 0.8125rem;    /* 13px */
+  --text-meta--line-height: 1.125rem;
+  --text-micro: 0.6875rem;   /* 11px — apenas rótulos/badges */
+  --text-micro--line-height: 0.875rem;
+
+  /* -- Raio e sombra ----------------------------------------------------- */
+  --radius-card: 1rem;
+  --radius-sheet: 1.5rem;
+
+  --shadow-card: 0 1px 2px rgb(28 25 23 / 0.05), 0 1px 3px rgb(28 25 23 / 0.04);
+  --shadow-raised: 0 4px 12px rgb(28 25 23 / 0.08), 0 1px 3px rgb(28 25 23 / 0.05);
+  --shadow-sheet: 0 -8px 32px rgb(28 25 23 / 0.16);
+  --shadow-nav: 0 -1px 0 var(--color-shell-200);
+}
+
+/* --------------------------------------------------------------------------
+   Base
+   -------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light;
+  /* Área segura (notch / gesture bar). Fallback 0 fora de PWA. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Altura da navegação inferior — usada por telas para reservar espaço. */
+  --nav-h: 3.75rem; /* 60px */
+}
+
+html {
+  /* Impede o zoom automático do iOS ao focar inputs < 16px. */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-shell-100);
+  color: var(--color-shell-900);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.375rem;
+  -webkit-font-smoothing: antialiased;
+  /* Sem scroll horizontal — o app é uma coluna única.
+     `clip` e não `hidden`: `hidden` transforma o body num contêiner de
+     rolagem (força overflow-y: auto), e aí headers `sticky` passam a se
+     prender a ele em vez de à janela. */
+  overflow-x: clip;
+  /* Evita realce cinza no toque (Android/iOS). */
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+/* Alvo de toque mínimo (44px) para tudo que é interativo. */
+button,
+[role="button"],
+a {
+  touch-action: manipulation;
+}
+
+/* Foco visível — acessibilidade por teclado sem poluir o toque. */
+:focus-visible {
+  outline: 2px solid var(--color-brand-700);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Esconde a barra de rolagem nas faixas horizontais (chips, abas). */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Números tabulares — valores monetários não "dançam" ao atualizar. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Respeita quem pediu menos movimento. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Pulso do marcador de GPS. */
+@keyframes ovolog-ping {
+  0% { transform: scale(1); opacity: 0.5; }
+  80%, 100% { transform: scale(2.4); opacity: 0; }
+}
+.gps-ping {
+  animation: ovolog-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Brilho de carregamento (skeleton). */
+@keyframes ovolog-shimmer {
+  100% { transform: translateX(100%); }
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-shell-200);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 0.6),
+    transparent
+  );
+  animation: ovolog-shimmer 1.6s infinite;
+}
+
+/* --------------------------------------------------------------------------
+   Shell responsivo
+
+   O celular é a experiência principal: uma coluna, largura total. No desktop
+   a MESMA coluna é mantida e ganha uma sidebar à esquerda e um painel de
+   contexto à direita — a lógica do produto não muda, só o entorno (§50).
+
+   `--rail` e `--col-w` deixam os elementos `fixed` (navegação inferior, barra
+   de ação, toasts) alinhados à coluna em vez de à janela inteira.
+   -------------------------------------------------------------------------- */
+
+:root {
+  --rail: 0px;
+  --col-w: 100%;
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --rail: 16rem;      /* sidebar */
+    --col-w: 26.25rem;  /* 420px — largura de referência do aparelho */
+    /* No desktop a navegação vive na sidebar; a barra inferior some e não
+       precisa mais reservar altura. */
+    --nav-h: 0px;
+  }
+}
+
+/* Elementos fixos acompanham a coluna, não a janela. */
+.app-fixed {
+  left: var(--rail);
+  width: var(--col-w);
+}
