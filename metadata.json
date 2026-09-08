@@ -1,0 +1,10 @@
+{
+  "name": "OVOLOG",
+  "description": "Gestão inteligente para distribuição de ovos. Aplicativo mobile-first para controle de rotas, vendas e logística.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
