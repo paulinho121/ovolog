@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowRight, Eye, EyeOff, Mail } from 'lucide-react';
-import { users } from '../data/catalog';
+import { catalogoVazio, users } from '../data/catalog';
 import { useApp } from '../store/app';
 import { useNav } from '../store/navigation';
 import { Button, Card } from '../components/ui/primitives';
@@ -45,16 +45,21 @@ export function SplashScreen({ legenda }: { legenda?: string } = {}) {
 export function LoginScreen() {
   const { signIn } = useApp();
   const { navigate, reset } = useNav();
-  const [userId, setUserId] = useState('u1');
-  const [password, setPassword] = useState('ovolog');
+  const [userId, setUserId] = useState(users[0]?.id ?? '');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  const selected = users.find((u) => u.id === userId)!;
+  const selected = users.find((u) => u.id === userId);
 
   function enter() {
     signIn(userId);
     reset('home');
   }
+
+  /* Sem equipe cadastrada não há em quem entrar: esta tela é um seletor de
+     perfil, e a lista vem do banco. Melhor dizer o que falta do que mostrar
+     um seletor vazio e um botão que não leva a lugar nenhum. */
+  if (catalogoVazio()) return <SemEquipeCadastrada />;
 
   return (
     <div className="flex min-h-screen flex-col bg-white">
@@ -70,7 +75,7 @@ export function LoginScreen() {
         <Field label="E-mail">
           <div className="relative">
             <Mail size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-shell-400" />
-            <Input value={selected.email} readOnly className="pl-11" />
+            <Input value={selected?.email ?? ''} readOnly className="pl-11" />
           </div>
         </Field>
 
@@ -130,7 +135,7 @@ export function LoginScreen() {
           </div>
         </div>
 
-        <Button size="lg" block onClick={enter} icon={<ArrowRight size={18} />}>
+        <Button size="lg" block disabled={!selected} onClick={enter} icon={<ArrowRight size={18} />}>
           Entrar
         </Button>
 
@@ -141,6 +146,40 @@ export function LoginScreen() {
           Esqueci minha senha
         </button>
       </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------- Banco sem cadastro */
+
+/* Estado de banco vazio. Acontece antes da primeira carga de dados reais e
+   quando a conexão com o Supabase está de pé mas o schema ainda não foi
+   populado. Os dois casos têm a mesma saída, e nenhuma delas é o app
+   inventar uma equipe para deixar alguém entrar. */
+function SemEquipeCadastrada() {
+  return (
+    <div
+      className="flex min-h-screen flex-col bg-white px-6"
+      style={{ paddingTop: 'calc(var(--safe-top) + 4rem)' }}
+    >
+      <div className="grid size-14 place-items-center rounded-2xl bg-shell-100 text-3xl">🥚</div>
+      <h1 className="mt-5 text-display font-bold tracking-tight text-shell-900">
+        Nenhuma equipe cadastrada
+      </h1>
+      <p className="mt-2 text-body text-shell-600">
+        O banco está conectado, mas não há ninguém em <strong>usuarios</strong>. Como o acesso
+        é por perfil, não há em quem entrar.
+      </p>
+      <Card className="mt-6 p-4">
+        <p className="text-meta text-shell-700">
+          Preencha e rode <strong>supabase/migrations/0004_dados_reais.sql</strong> no SQL
+          Editor do Supabase, com a equipe, os produtos, os fornecedores e os veículos da
+          operação. Depois recarregue esta página.
+        </p>
+      </Card>
+      <p className="mt-4 text-micro text-shell-500">
+        Cliente não entra por lá: depois de acessar o app, cadastre em Clientes.
+      </p>
     </div>
   );
 }

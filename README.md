@@ -106,7 +106,6 @@ src/
   data/
     repositorio.ts       ÚNICA fronteira com o banco (SQL ↔ tipos do domínio)
     catalog.ts           cadastros de referência, hidratados do banco no boot
-    seed.ts              dados da carga inicial — só o gerador de seed usa
   store/
     navigation.tsx       pilha de navegação e abas
     app.tsx              operação, carrinho, GPS simulado, fila offline
@@ -125,8 +124,7 @@ src/
   components/desktop/    primitivas de desktop (tabela, painel, indicador)
   lib/viewport.ts        detecção de desktop (>= 1024px)
 
-supabase/migrations/     schema e carga inicial (SQL versionado)
-scripts/gerar-seed.ts    gera o SQL de carga a partir de src/data
+supabase/migrations/     schema e cadastros (SQL versionado)
 ```
 
 ## Desktop
@@ -163,14 +161,29 @@ necessariamente custa.
 Os dados vivem num Postgres no **Supabase** — 21 tabelas em `public`, criadas
 por `supabase/migrations/0001_reset_e_schema.sql`.
 
-A carga inicial é **gerada a partir do próprio código**, não escrita à mão:
+As migrações rodam no SQL Editor do Supabase, em ordem:
 
-```
-npx tsx scripts/gerar-seed.ts        # regrava supabase/migrations/0002_seed.sql
-```
+| Arquivo | O que faz |
+| --- | --- |
+| `0001_reset_e_schema.sql` | Recria o schema `public` inteiro: tipos, 21 tabelas, índices, RLS |
+| `0003_zerar_dados_demo.sql` | Esvazia todas as tabelas. Irreversível |
+| `0004_dados_reais.sql` | Cadastros da operação — **modelo para preencher** |
 
-As datas do seed são relativas ao dia da geração ("hoje" = data em que rodou).
-Rode de novo quando quiser reancorar a demonstração no dia atual.
+O `0002_seed.sql`, que carregava a demonstração, foi removido: ele começava
+com um `truncate` de tudo, e reaplicar as migrações em ordem apagaria dados
+reais para repor os falsos. Está no histórico do git se precisar consultar.
+
+### Cadastros que só entram por SQL
+
+`usuarios`, `produtos`, `fornecedores` e `veiculos` não têm tela de cadastro:
+o app só lê essas quatro tabelas. Mudar um preço, contratar um motorista ou
+comprar um veículo é editar o `0004` e rodar. Cliente é a exceção — tem
+formulário em Clientes → Cadastrar cliente.
+
+Todo produto precisa da linha correspondente em `estoque`. O app só faz
+`update` ali; sem a linha, a movimentação de estoque **falha em silêncio** —
+o PostgREST devolve sucesso para um update que não encontrou nada. O `0004`
+cria as linhas que faltarem.
 
 ### Como o app conversa com o banco
 
