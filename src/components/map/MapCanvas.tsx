@@ -79,10 +79,21 @@ function iconeVeiculo(v: Vehicle) {
     iconSize: [30, 30],
     iconAnchor: [15, 15],
     html:
-      '<span class="grid size-full place-items-center rounded-full text-[14px] ' +
+      /* Caminhão em SVG, não o emoji 🚐: o marcador é a peça mais vista do
+         rastreamento e não pode mudar de desenho conforme o aparelho de quem
+         está olhando. `stroke="currentColor"` com o branco herdado do span
+         mantém o ícone legível sobre as três cores de status. */
+      '<span class="grid size-full place-items-center rounded-full text-white ' +
       'shadow-raised ring-2 ring-white" style="background:' +
       cor +
-      '">&#128656;</span>',
+      '">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/>' +
+      '<path d="M14 9h4l4 4v4a1 1 0 0 1-1 1h-1"/>' +
+      '<circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>' +
+      '</svg>' +
+      '</span>',
   });
 }
 

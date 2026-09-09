@@ -7,6 +7,7 @@ import {
   History,
   MapPin,
   Timer,
+  Truck,
   Wrench,
 } from 'lucide-react';
 import { AppBar, Screen } from '../components/layout/chrome';
@@ -95,8 +96,8 @@ export function VehicleScreen() {
       <Screen>
         <div className="bg-white px-4 pb-4">
           <div className="flex items-center gap-4">
-            <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-shell-100 text-3xl">
-              🚐
+            <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-shell-100 text-shell-600">
+              <Truck size={30} />
             </span>
             <div className="min-w-0 flex-1">
               <Badge tone={status.tone}>{status.label}</Badge>

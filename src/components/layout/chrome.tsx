@@ -49,7 +49,7 @@ export function ConnectionPill({ compact }: { compact?: boolean }) {
         : { role: 'status', 'aria-label': `Conexão: ${map.label}` })}
       className={cn(
         'inline-flex h-7 items-center gap-1.5 rounded-full px-2.5',
-        'text-micro font-bold uppercase tracking-wide',
+        'text-micro font-semibold',
         connection === 'online' && 'bg-ok-50 text-ok-700',
         connection === 'sincronizando' && 'bg-warn-50 text-warn-700',
         connection === 'offline' && 'bg-bad-50 text-bad-700',
@@ -103,7 +103,9 @@ export function Header() {
       <div className="flex h-16 items-center gap-3 px-4">
         <div className="min-w-0 flex-1">
           <div className="truncate text-subtitle font-bold text-shell-900">
-            {greeting()}, {firstName} 👋
+            {/* Sem emoji: 👋 é desenhado pelo sistema, muda de aparência em
+                cada aparelho e é a primeira coisa que a pessoa vê ao abrir. */}
+            {greeting()}, {firstName}
           </div>
           <div className="truncate text-meta text-shell-600">{longDate(new Date())}</div>
         </div>

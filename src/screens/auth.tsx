@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowRight, Eye, EyeOff, LoaderCircle, Mail, TriangleAlert } from 'lucide-react';
 import { useApp } from '../store/app';
+import { MarcaOvolog } from '../components/ui/marca';
 import { supabase } from '../lib/supabase';
 import { useNav } from '../store/navigation';
 import { Button, Card } from '../components/ui/primitives';
@@ -25,8 +26,8 @@ export function SplashScreen({ legenda }: { legenda?: string } = {}) {
   return (
     <div className="grid min-h-screen place-items-center bg-brand-700 px-8">
       <div className="text-center">
-        <div className="mx-auto grid size-20 place-items-center rounded-3xl bg-white/15 text-5xl backdrop-blur">
-          🥚
+        <div className="mx-auto grid size-20 place-items-center rounded-3xl bg-white/15 text-white backdrop-blur">
+          <MarcaOvolog size={44} />
         </div>
         <h1 className="mt-5 text-display font-bold tracking-tight text-white">OVOLOG</h1>
         <p className="mt-1 text-body text-brand-100">
@@ -76,8 +77,8 @@ export function LoginScreen() {
         className="bg-brand-700 px-6 pb-10"
         style={{ paddingTop: 'calc(var(--safe-top) + 3rem)' }}
       >
-        <div className="grid size-14 place-items-center rounded-2xl bg-white/15 text-3xl backdrop-blur">
-          🥚
+        <div className="grid size-14 place-items-center rounded-2xl bg-white/15 text-white backdrop-blur">
+          <MarcaOvolog size={30} />
         </div>
         <h1 className="mt-4 text-display font-bold tracking-tight text-white">OVOLOG</h1>
         <p className="mt-1 text-body text-brand-100">Entre para começar a operação de hoje.</p>

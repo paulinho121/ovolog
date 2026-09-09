@@ -157,6 +157,57 @@ O ganho real do master-detail não é caber mais linha: é **não perder a lista
 ao abrir um item**, que é exatamente o que a navegação em pilha do celular
 necessariamente custa.
 
+## Design system
+
+Tokens em `src/index.css`, primitivas em `src/components/ui/`.
+
+**Tipografia.** Inter variável, auto-hospedada (`@fontsource-variable/inter`,
+importada em `main.tsx`). Vem do bundle e não do Google Fonts de propósito:
+num app que roda com sinal ruim dentro de um veículo, depender de um segundo
+domínio para a tipografia troca identidade consistente por uma requisição que
+pode não completar. Só o subset latino é baixado — 48 kB.
+
+**Neutros.** Cada degrau da rampa `shell` tem um papel e um contraste mínimo,
+medidos contra `shell-100` (o fundo mais claro em que aparece texto), não
+contra branco. Texto passa 4,5:1; elemento de interface passa 3:1. O app é
+usado ao sol, dentro de uma van, com a tela suja — o que é limítrofe no
+escritório some em campo.
+
+**Escala de 4px.** Os degraus em uso estão documentados no bloco de
+espaçamento do `index.css`. Fora deles, é erro.
+
+### `cn()` precisa conhecer os tokens
+
+O `tailwind-merge` resolve conflitos de classe, mas só do que ele conhece.
+Nomes próprios do design system (`text-meta`, `rounded-card`, `shadow-raised`)
+ele não conhece — e chuta errado, **em silêncio**:
+
+```
+cn('text-micro font-semibold', 'text-ok-700')  →  'font-semibold text-ok-700'
+```
+
+Todo `text-*` desconhecido é tratado como cor. Vendo duas cores, ele descarta
+a primeira — e o tamanho some. Era isso que fazia badges renderizarem em 15px
+no lugar de 12px, e o valor dos indicadores do painel sair em 15px no lugar
+de 24px, achatando a hierarquia da tela inteira.
+
+`rounded-card` e `shadow-card` tinham o problema espelhado: não eram
+reconhecidos, então **não** conflitavam com `rounded-full` e `shadow-none`, e
+as duas classes chegavam juntas ao CSS.
+
+As escalas estão declaradas em `src/lib/utils.ts`. **Ao acrescentar um degrau
+novo em `index.css`, acrescente lá também** — senão o degrau novo volta a ser
+descartado sem aviso.
+
+### Sem emoji no cromo
+
+Emoji é desenhado pelo sistema operacional, não pelo produto: 🥚 vira três
+marcas diferentes em Windows, Android e iPhone, e nenhuma foi escolhida por
+ninguém. A marca é SVG (`components/ui/marca.tsx`) e os ícones são Lucide.
+
+A exceção é `produtos.emoji`, que é **dado do cliente** — a distribuidora
+escolhe o ícone do produto dela no cadastro.
+
 ## Banco de dados
 
 Os dados vivem num Postgres no **Supabase** — 21 tabelas em `public`, criadas

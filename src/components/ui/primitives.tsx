@@ -132,7 +132,7 @@ export function ListRow({
     <Tag
       onClick={onClick}
       className={cn(
-        'flex w-full items-center gap-3 px-4 py-3.5 text-left min-h-[3.5rem]',
+        'flex w-full items-center gap-3 px-4 py-4 text-left min-h-[3.5rem]',
         onClick && 'active:bg-shell-100 transition-colors',
         className,
       )}
@@ -148,11 +148,20 @@ export function ListRow({
   );
 }
 
-/* ------------------------------------------------------------------ Badge */
+/* -------------------------------------------------------------------- Tom */
+
+/* Um tom, três formas de aparecer: preenchido (badge, ladrilho), sólido
+   (ponto, barra de progresso) e só texto (valor com significado).
+
+   Este mapa existia copiado em cinco lugares deste arquivo — Badge, Dot,
+   Stat, KeyValue e Progress cada um com o seu. Cinco cópias é onde nasce a
+   inconsistência: mudar o verde de "pago" em quatro delas e esquecer a
+   quinta é o tipo de coisa que ninguém revisa e todo mundo vê. */
 
 export type Tone = 'ok' | 'warn' | 'bad' | 'info' | 'neutral' | 'brand';
 
-const TONES: Record<Tone, string> = {
+/** Fundo claro + texto escuro. Badges e ladrilhos de ícone. */
+export const TONE_SUAVE: Record<Tone, string> = {
   ok: 'bg-ok-50 text-ok-700',
   warn: 'bg-warn-50 text-warn-700',
   bad: 'bg-bad-50 text-bad-700',
@@ -160,6 +169,28 @@ const TONES: Record<Tone, string> = {
   neutral: 'bg-shell-200 text-shell-700',
   brand: 'bg-brand-100 text-brand-800',
 };
+
+/** Cor cheia. Pontos de status e preenchimento de progresso. */
+export const TONE_SOLIDO: Record<Tone, string> = {
+  ok: 'bg-ok-500',
+  warn: 'bg-warn-500',
+  bad: 'bg-bad-500',
+  info: 'bg-info-500',
+  neutral: 'bg-shell-400',
+  brand: 'bg-brand-500',
+};
+
+/** Só o texto. Valores em que a cor carrega significado. */
+export const TONE_TEXTO: Record<Tone, string> = {
+  ok: 'text-ok-700',
+  warn: 'text-warn-700',
+  bad: 'text-bad-700',
+  info: 'text-info-700',
+  neutral: 'text-shell-900',
+  brand: 'text-brand-800',
+};
+
+/* ------------------------------------------------------------------ Badge */
 
 export function Badge({
   tone = 'neutral',
@@ -176,8 +207,11 @@ export function Badge({
     <span
       className={cn(
         'inline-flex items-center gap-1 rounded-full px-2.5 py-1',
-        'text-micro font-bold uppercase tracking-wide',
-        TONES[tone],
+        /* Sem caixa alta. Numa lista de logística o status é o que o olho
+           procura primeiro, e maiúscula apaga a silhueta da palavra — que é
+           justamente o que permite reconhecer sem ler. */
+        'text-micro font-semibold',
+        TONE_SUAVE[tone],
         className,
       )}
     >
@@ -189,15 +223,7 @@ export function Badge({
 
 /* Ponto colorido — status compacto quando não cabe um badge inteiro. */
 export function Dot({ tone = 'neutral', className }: { tone?: Tone; className?: string }) {
-  const fill: Record<Tone, string> = {
-    ok: 'bg-ok-500',
-    warn: 'bg-warn-500',
-    bad: 'bg-bad-500',
-    info: 'bg-info-500',
-    neutral: 'bg-shell-400',
-    brand: 'bg-brand-500',
-  };
-  return <span className={cn('inline-block size-2 rounded-full', fill[tone], className)} />;
+  return <span className={cn('inline-block size-2 rounded-full', TONE_SOLIDO[tone], className)} />;
 }
 
 /* ----------------------------------------------------------------- Avatar */
@@ -237,7 +263,7 @@ export function IconTile({
   return (
     <span
       style={{ width: size, height: size }}
-      className={cn('grid shrink-0 place-items-center rounded-xl', TONES[tone])}
+      className={cn('grid shrink-0 place-items-center rounded-xl', TONE_SUAVE[tone])}
     >
       {children}
     </span>
@@ -256,14 +282,6 @@ export function Progress({
   tone?: Tone;
   className?: string;
 }) {
-  const fill: Record<Tone, string> = {
-    ok: 'bg-ok-500',
-    warn: 'bg-warn-500',
-    bad: 'bg-bad-500',
-    info: 'bg-info-500',
-    neutral: 'bg-shell-400',
-    brand: 'bg-brand-500',
-  };
   const pct = Math.round(Math.min(1, Math.max(0, value)) * 100);
   return (
     <div
@@ -273,7 +291,7 @@ export function Progress({
       aria-valuemax={100}
       className={cn('h-2 w-full overflow-hidden rounded-full bg-shell-200', className)}
     >
-      <div className={cn('h-full rounded-full transition-[width] duration-500', fill[tone])} style={{ width: `${pct}%` }} />
+      <div className={cn('h-full rounded-full transition-[width] duration-500', TONE_SOLIDO[tone])} style={{ width: `${pct}%` }} />
     </div>
   );
 }
@@ -295,21 +313,13 @@ export function Stat({
   icon?: ReactNode;
   onClick?: () => void;
 }) {
-  const accent: Record<Tone, string> = {
-    ok: 'text-ok-700',
-    warn: 'text-warn-700',
-    bad: 'text-bad-700',
-    info: 'text-info-700',
-    neutral: 'text-shell-900',
-    brand: 'text-brand-800',
-  };
   return (
-    <Card onClick={onClick} className="p-3.5">
+    <Card onClick={onClick} className="p-4">
       <div className="flex items-start justify-between gap-2">
         <span className="text-meta font-medium text-shell-600">{label}</span>
         {icon}
       </div>
-      <div className={cn('mt-1.5 text-title font-bold tnum', accent[tone])}>{value}</div>
+      <div className={cn('mt-1.5 text-title font-bold tnum', TONE_TEXTO[tone])}>{value}</div>
       {hint && <div className="mt-0.5 text-meta text-shell-500">{hint}</div>}
     </Card>
   );
@@ -349,14 +359,6 @@ export function KeyValue({
   tone?: Tone;
   strong?: boolean;
 }) {
-  const accent: Record<Tone, string> = {
-    ok: 'text-ok-700',
-    warn: 'text-warn-700',
-    bad: 'text-bad-700',
-    info: 'text-info-700',
-    neutral: 'text-shell-900',
-    brand: 'text-brand-800',
-  };
   return (
     <div className="flex items-baseline justify-between gap-4 py-2">
       <span className="text-body text-shell-600">{label}</span>
@@ -364,7 +366,7 @@ export function KeyValue({
         className={cn(
           'tnum text-right',
           strong ? 'text-subtitle font-bold' : 'font-semibold',
-          tone ? accent[tone] : 'text-shell-900',
+          tone ? TONE_TEXTO[tone] : 'text-shell-900',
         )}
       >
         {value}

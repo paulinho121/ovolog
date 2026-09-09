@@ -10,6 +10,7 @@ import { useDesktop } from './lib/viewport';
 import { BottomNav } from './components/layout/chrome';
 import { Toasts } from './components/ui/overlays';
 import { MapCanvas } from './components/map/MapCanvas';
+import { MarcaOvolog } from './components/ui/marca';
 import { Avatar, Card, Progress } from './components/ui/primitives';
 import { cn } from './lib/utils';
 import { moneyShort, num } from './lib/format';
@@ -188,7 +189,9 @@ function Sidebar() {
   return (
     <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-shell-200 bg-white lg:flex">
       <div className="flex items-center gap-3 px-5 py-5">
-        <span className="grid size-10 place-items-center rounded-xl bg-brand-700 text-xl">🥚</span>
+        <span className="grid size-10 place-items-center rounded-xl bg-brand-700 text-white">
+          <MarcaOvolog size={22} />
+        </span>
         <div>
           <div className="font-bold leading-tight text-shell-900">OVOLOG</div>
           <div className="text-micro text-shell-500">Distribuição de ovos</div>

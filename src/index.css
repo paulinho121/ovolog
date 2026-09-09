@@ -18,14 +18,35 @@
   --color-brand-800: #96400e;
   --color-brand-900: #7a360f;
 
-  /* -- Neutros quentes (casca) ------------------------------------------ */
+  /* -- Neutros quentes (casca) ------------------------------------------
+
+     Cada degrau tem um PAPEL, e o papel define o contraste mínimo. Os
+     valores foram medidos contra `shell-100`, o fundo mais claro em que
+     texto aparece no app — não contra branco, que é o teste fácil.
+
+     O app é usado dentro de um veículo, ao sol, com a tela suja: o que já
+     é limítrofe no escritório desaparece em campo. Por isso todo token de
+     TEXTO passa 4,5:1 e todo token de INTERFACE passa 3:1.
+
+       300  bordas e separadores        — sem alvo (não carrega informação)
+       400  ícone auxiliar, chevron,
+            placeholder                 — 3,27:1  (alvo 3:1)
+       500  texto terciário (hints)     — 4,91:1  (alvo 4,5:1)
+       600  texto secundário            — 6,77:1
+       700  texto forte                 — 7,91:1
+       800  títulos                     — 12,04:1
+       900  corpo                       — 16,04:1
+
+     400 e 500 eram #b8b4aa (2,07:1) e #8a8580 (3,35:1) — os dois falhavam,
+     e eram exatamente os tons de chevron, placeholder e legenda de
+     indicador. 600 escureceu junto para o degrau continuar visível. */
   --color-shell-50: #faf9f7;
   --color-shell-100: #f6f5f2;
   --color-shell-200: #ecebe6;
   --color-shell-300: #dedbd3;
-  --color-shell-400: #b8b4aa;
-  --color-shell-500: #8a8580;
-  --color-shell-600: #6b6660;
+  --color-shell-400: #8d877d;
+  --color-shell-500: #6f6a64;
+  --color-shell-600: #5a554f;
   --color-shell-700: #504b46;
   --color-shell-800: #33302c;
   --color-shell-900: #1c1917;
@@ -50,8 +71,13 @@
   --color-series-3: #1baf7a;
 
   /* -- Tipografia -------------------------------------------------------- */
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  /* A Inter é carregada de verdade (import em main.tsx, arquivo no bundle).
+     Antes ela era só declarada aqui e nunca chegava: o app renderizava em
+     Segoe UI no Windows, Roboto no Android e SF Pro no iPhone — três
+     métricas diferentes recebendo o ajuste de entreletra calibrado para uma
+     quarta. A pilha abaixo continua valendo enquanto a fonte carrega. */
+  --font-sans: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
   --text-display: 1.75rem;   /* 28px — títulos de tela */
   --text-display--line-height: 2.125rem;
@@ -65,8 +91,29 @@
   --text-body--line-height: 1.375rem;
   --text-meta: 0.8125rem;    /* 13px */
   --text-meta--line-height: 1.125rem;
-  --text-micro: 0.6875rem;   /* 11px — apenas rótulos/badges */
-  --text-micro--line-height: 0.875rem;
+  /* 12px, e não 11px. Este degrau carrega o que mais se procura numa lista
+     de logística — o status do pedido, da rota, da conta. Estava no menor
+     tamanho da escala, que é o oposto do papel que exerce. */
+  --text-micro: 0.75rem;     /* 12px — rótulos, badges, contadores */
+  --text-micro--line-height: 1rem;
+
+  /* -- Espaçamento -------------------------------------------------------
+
+     Escala de 4px. O app usava utilitários soltos do Tailwind, e nasceram
+     `p-4`, `p-3.5` e `px-4 py-3.5` convivendo no mesmo tipo de superfície —
+     diferença invisível isolada, perceptível quando dois cards vizinhos não
+     alinham.
+
+     Os degraus abaixo são os que o produto usa. Fora deles, é erro:
+
+       1  4px   entre ícone e rótulo colados
+       2  8px   entre itens de uma mesma linha
+       3  12px  entre elementos de um card
+       4  16px  padding de card e de tela  ← o padrão
+       5  20px  entre blocos de conteúdo
+       6  24px  entre seções
+      10  40px  respiro de topo de tela */
+  --spacing: 0.25rem;
 
   /* -- Raio e sombra ----------------------------------------------------- */
   --radius-card: 1rem;

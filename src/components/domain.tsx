@@ -8,6 +8,7 @@ import {
   MapPin,
   QrCode,
   CalendarClock,
+  Truck,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '../lib/utils';
@@ -308,8 +309,8 @@ export function VehicleCard({
   return (
     <Card onClick={onClick} className="p-4">
       <div className="flex items-center gap-3">
-        <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-shell-100 text-xl">
-          🚐
+        <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-shell-100 text-shell-600">
+          <Truck size={22} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
