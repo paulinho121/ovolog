@@ -1,6 +1,15 @@
 import { useState } from 'react';
-import { Building2, CircleCheck, LoaderCircle, LogIn, Plus, TriangleAlert } from 'lucide-react';
-import { AppBar, Screen, StickyAction } from '../components/layout/chrome';
+import {
+  Building2,
+  ChevronRight,
+  CircleCheck,
+  LoaderCircle,
+  LogIn,
+  Plus,
+  ShieldCheck,
+  TriangleAlert,
+} from 'lucide-react';
+import { AppBar } from '../components/layout/chrome';
 import { Badge, Button, Card, ListRow, SectionTitle } from '../components/ui/primitives';
 import { Field, Input } from '../components/ui/forms';
 import { EmptyState } from '../components/ui/states';
@@ -29,12 +38,12 @@ export function PlataformaScreen({ onEntrarNaOperacao }: { onEntrarNaOperacao?: 
   const ativas = distribuidoras.filter((d) => d.ativa);
 
   return (
-    <>
+    <div className="min-h-screen bg-shell-100">
       <header
         className="border-b border-shell-200 bg-white"
         style={{ paddingTop: 'calc(var(--safe-top) + 0.5rem)' }}
       >
-        <div className="flex items-center gap-3 px-4 pb-3">
+        <div className="mx-auto flex max-w-3xl items-center gap-3 px-5 pb-3">
           <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-700 text-white">
             <MarcaOvolog size={22} />
           </span>
@@ -46,16 +55,24 @@ export function PlataformaScreen({ onEntrarNaOperacao }: { onEntrarNaOperacao?: 
               {ativas.length !== distribuidoras.length && ` • ${ativas.length} ativas`}
             </div>
           </div>
+          <Button
+            size="sm"
+            icon={<Plus size={16} />}
+            onClick={() => setCriando(true)}
+            className="hidden sm:inline-flex"
+          >
+            Nova distribuidora
+          </Button>
           <button
             onClick={() => void signOut()}
-            className="text-meta font-semibold text-shell-600 underline"
+            className="shrink-0 text-meta font-semibold text-shell-600 underline"
           >
             Sair
           </button>
         </div>
       </header>
 
-      <Screen className="space-y-4 px-4 pt-4" action="single">
+      <main className="mx-auto max-w-3xl space-y-4 px-5 py-5 pb-28 sm:pb-5">
         {/* Quem administra o produto e também tem cadastro numa distribuidora
             entra na operação dela sem trocar de conta. */}
         {session && onEntrarNaOperacao && (
@@ -69,6 +86,30 @@ export function PlataformaScreen({ onEntrarNaOperacao }: { onEntrarNaOperacao?: 
                 {distribuidora?.nome ?? 'Sua distribuidora'} • {session.name}
               </span>
             </span>
+            <ChevronRight size={18} className="shrink-0 text-shell-400" />
+          </Card>
+        )}
+
+        {/* Admin sem cadastro em nenhuma equipe. Não é erro — é o desenho: quem
+            administra o produto não opera distribuição. Mas sem dizer isso, a
+            tela parece um app que perdeu o resto das funções. */}
+        {!session && (
+          <Card className="flex items-start gap-3 p-4">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-shell-100 text-shell-600">
+              <ShieldCheck size={20} />
+            </span>
+            <div className="min-w-0 text-meta text-shell-700">
+              <p className="font-semibold text-shell-900">Você administra a plataforma</p>
+              <p className="mt-1">
+                Esta conta cria e acompanha distribuidoras — não opera nenhuma. Cada empresa
+                tem a própria equipe, os próprios produtos e os próprios clientes, sem enxergar
+                as outras.
+              </p>
+              <p className="mt-2">
+                Para também operar uma delas, ligue esta conta à equipe dela pelo SQL Editor. O
+                comando está no rodapé de <strong>0007_multiempresa.sql</strong>.
+              </p>
+            </div>
           </Card>
         )}
 
@@ -90,17 +131,22 @@ export function PlataformaScreen({ onEntrarNaOperacao }: { onEntrarNaOperacao?: 
             </Card>
           </div>
         )}
-      </Screen>
+      </main>
 
-      <StickyAction>
+      {/* No celular a ação principal continua ao alcance do polegar. Barra
+          própria, e não `StickyAction`: aquela se alinha à coluna do app,
+          descontando uma barra lateral que esta tela não tem. */}
+      <div
+        className="fixed inset-x-0 bottom-0 border-t border-shell-200 bg-white/95 px-5 pt-3 backdrop-blur sm:hidden"
+        style={{ paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}
+      >
         <Button size="lg" block icon={<Plus size={18} />} onClick={() => setCriando(true)}>
           Nova distribuidora
         </Button>
-      </StickyAction>
-    </>
+      </div>
+    </div>
   );
 }
-
 function LinhaDistribuidora({ distribuidora }: { distribuidora: Distribuidora }) {
   const detalhe = [distribuidora.cidade, distribuidora.documento && fmtCnpj(distribuidora.documento)]
     .filter(Boolean)
@@ -164,7 +210,7 @@ function NovaDistribuidoraScreen({ onFechar }: { onFechar: () => void }) {
   return (
     <>
       <AppBar title="Nova distribuidora" onBack={onFechar} />
-      <Screen action="single">
+      <main className="mx-auto max-w-2xl px-1 pb-28">
         <div className="space-y-4 p-4">
           <Field label="Nome da empresa" hint="Como ela é conhecida.">
             <Input
@@ -206,9 +252,13 @@ function NovaDistribuidoraScreen({ onFechar }: { onFechar: () => void }) {
             </p>
           )}
         </div>
-      </Screen>
+      </main>
 
-      <StickyAction>
+      <div
+        className="fixed inset-x-0 bottom-0 border-t border-shell-200 bg-white/95 px-5 pt-3 backdrop-blur"
+        style={{ paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}
+      >
+        <div className="mx-auto max-w-2xl">
         <Button
           size="lg"
           block
@@ -218,7 +268,8 @@ function NovaDistribuidoraScreen({ onFechar }: { onFechar: () => void }) {
         >
           {salvando ? 'Criando…' : 'Criar distribuidora'}
         </Button>
-      </StickyAction>
+        </div>
+      </div>
     </>
   );
 }
@@ -236,7 +287,7 @@ function DistribuidoraCriada({
   return (
     <>
       <AppBar title="Distribuidora criada" onBack={onFechar} />
-      <Screen action="single">
+      <main className="mx-auto max-w-2xl px-1 pb-28">
         <div className="space-y-4 p-4">
           <div className="flex items-start gap-3">
             <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-ok-50 text-ok-700">
@@ -284,13 +335,18 @@ values
             </p>
           </Card>
         </div>
-      </Screen>
+      </main>
 
-      <StickyAction>
+      <div
+        className="fixed inset-x-0 bottom-0 border-t border-shell-200 bg-white/95 px-5 pt-3 backdrop-blur"
+        style={{ paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}
+      >
+        <div className="mx-auto max-w-2xl">
         <Button size="lg" block onClick={onFechar}>
           Concluir
         </Button>
-      </StickyAction>
+        </div>
+      </div>
     </>
   );
 }
