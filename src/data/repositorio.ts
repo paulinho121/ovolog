@@ -6,6 +6,7 @@ import type {
   AppNotification,
   CashEntry,
   Customer,
+  Distribuidora,
   Incident,
   Order,
   Purchase,
@@ -133,6 +134,7 @@ export async function carregarEstado(): Promise<EstadoRemoto> {
     usuarios: usuarios.map((r) => ({
       id: String(r.id),
       authId: r.auth_id ? String(r.auth_id) : undefined,
+      distribuidoraId: r.distribuidora_id ? String(r.distribuidora_id) : undefined,
       name: String(r.nome),
       role: r.papel as User['role'],
       phone: String(r.telefone ?? ''),
@@ -614,4 +616,58 @@ export async function marcarNotificacoesLidas() {
     'marcar notificações',
     supabase.from('notificacoes').update({ lida: true }).eq('lida', false),
   );
+}
+
+/* ------------------------------------------------------------ Plataforma */
+
+/* O RLS decide o que volta destas consultas: a equipe de uma distribuidora só
+   enxerga a própria; o admin de plataforma enxerga todas. Não há filtro por
+   tenant no código do app — de propósito. Filtro de aplicação se esquece numa
+   tela nova; política de banco vale para toda consulta, inclusive as que ainda
+   não foram escritas. */
+
+function paraDistribuidora(r: Record<string, unknown>): Distribuidora {
+  return {
+    id: String(r.id),
+    nome: String(r.nome),
+    documento: String(r.documento ?? ''),
+    telefone: String(r.telefone ?? ''),
+    cidade: String(r.cidade ?? ''),
+    ativa: r.ativa !== false,
+    criadaEm: String(r.criada_em ?? new Date().toISOString()),
+  };
+}
+
+export async function carregarDistribuidoras(): Promise<Distribuidora[]> {
+  const { data, error } = await supabase
+    .from('distribuidoras')
+    .select('*')
+    .order('nome');
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(paraDistribuidora);
+}
+
+export async function souAdminPlataforma(): Promise<boolean> {
+  /* `head: true` traz só a contagem: a resposta que interessa é "existe ou
+     não", e a política já garante que ninguém enxerga a linha de outro. */
+  const { count, error } = await supabase
+    .from('plataforma_admins')
+    .select('auth_id', { count: 'exact', head: true });
+  if (error) return false;
+  return (count ?? 0) > 0;
+}
+
+export async function criarDistribuidora(dados: {
+  nome: string;
+  documento: string;
+  telefone: string;
+  cidade: string;
+}): Promise<Distribuidora> {
+  const { data, error } = await supabase
+    .from('distribuidoras')
+    .insert(dados)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return paraDistribuidora(data as Record<string, unknown>);
 }

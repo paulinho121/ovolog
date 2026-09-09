@@ -90,7 +90,7 @@ export function SyncBanner() {
 /* Header da Home: saudação + data à esquerda, status à direita. Duas linhas
    no máximo — espaço vertical no celular é o recurso mais escasso do app. */
 export function Header() {
-  const { session, notifications } = useApp();
+  const { session, notifications, distribuidora } = useApp();
   const { navigate } = useNav();
   const unread = notifications.filter((n) => !n.read).length;
   const firstName = session?.name.split(' ')[0] ?? '';
@@ -107,7 +107,12 @@ export function Header() {
                 cada aparelho e é a primeira coisa que a pessoa vê ao abrir. */}
             {greeting()}, {firstName}
           </div>
-          <div className="truncate text-meta text-shell-600">{longDate(new Date())}</div>
+          {/* A distribuidora no lugar da data quando existe mais de uma no
+              produto: saber em qual empresa se está operando importa mais que
+              o dia da semana, que o aparelho já mostra. */}
+          <div className="truncate text-meta text-shell-600">
+            {distribuidora ? distribuidora.nome : longDate(new Date())}
+          </div>
         </div>
         <ConnectionPill compact />
         <button
@@ -145,7 +150,11 @@ export function AppBar({
   right?: ReactNode;
   sticky?: boolean;
 }) {
-  const { back } = useNav();
+  /* A pilha de navegação é opcional aqui: a área de acesso e a da plataforma
+     vivem fora dela, e um cabeçalho não deveria exigir roteador para
+     desenhar um título. Sem pilha, o botão voltar depende do onBack. */
+  const nav = useNav.opcional();
+  const voltar = onBack ?? nav?.back;
   return (
     <header
       className={cn(
@@ -156,8 +165,9 @@ export function AppBar({
     >
       <div className="flex h-14 items-center gap-1 pl-1 pr-2">
         <button
-          onClick={onBack ?? back}
+          onClick={voltar}
           aria-label="Voltar"
+          hidden={!voltar}
           className="grid size-11 shrink-0 place-items-center rounded-full text-shell-800 active:bg-shell-200"
         >
           <ChevronLeft size={24} />
@@ -207,7 +217,7 @@ export function Screen({
   /** Altura reservada quando a tela tem barra de ação fixa. */
   action?: 'none' | 'single' | 'double';
 }) {
-  const { showTabBar } = useNav();
+  const showTabBar = useNav.opcional()?.showTabBar ?? false;
   const reserve =
     (showTabBar ? 'var(--nav-h)' : '0px') +
     ' + ' +
@@ -223,7 +233,7 @@ export function Screen({
 /* Barra de ação fixa: a ação principal da tela vive aqui, ao alcance do
    polegar e acima da navegação inferior (princípio de uma mão). */
 export function StickyAction({ children }: { children: ReactNode }) {
-  const { showTabBar } = useNav();
+  const showTabBar = useNav.opcional()?.showTabBar ?? false;
   return (
     <div
       className="app-fixed fixed z-40 border-t border-shell-200 bg-white/95 px-4 pt-3 backdrop-blur"

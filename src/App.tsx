@@ -17,6 +17,7 @@ import { moneyShort, num } from './lib/format';
 import { orderTotal, ordersOfDay, routeProgress } from './lib/domain';
 
 import { ForgotScreen, LoginScreen, SplashScreen } from './screens/auth';
+import { PlataformaScreen } from './screens/plataforma';
 import { HomeScreen } from './screens/home';
 import {
   CustomerHistoryScreen,
@@ -415,7 +416,7 @@ function Shell() {
    apareceriam por um instante com listas vazias — que é indistinguível, para
    quem olha, de "não tem nada cadastrado". */
 function Boot() {
-  const { autenticado, carregando, erroCarga, recarregar } = useApp();
+  const { autenticado, adminPlataforma, carregando, erroCarga, recarregar } = useApp();
 
   if (!supabaseConfigurado) {
     return (
@@ -446,6 +447,11 @@ function Boot() {
   }
 
   if (carregando) return <SplashScreen legenda="Carregando a operação…" />;
+
+  /* Quem administra o produto não opera nenhuma distribuidora: não tem rota,
+     nem carrinho, nem Home por perfil. Cai numa área própria, fora da pilha
+     de navegação da operação. */
+  if (adminPlataforma) return <PlataformaScreen />;
 
   return (
     <NavigationProvider>

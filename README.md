@@ -208,6 +208,34 @@ ninguém. A marca é SVG (`components/ui/marca.tsx`) e os ícones são Lucide.
 A exceção é `produtos.emoji`, que é **dado do cliente** — a distribuidora
 escolhe o ícone do produto dela no cadastro.
 
+## Multiempresa
+
+Várias distribuidoras dividem o mesmo banco e **não se enxergam**. Cada tabela
+de operação tem `distribuidora_id`, e o RLS filtra por ele em toda consulta.
+
+O isolamento é do banco, não da aplicação, por um motivo prático: filtro de
+aplicação se esquece numa tela nova, e ninguém revisa. Política de banco vale
+para toda consulta, inclusive as que ainda não foram escritas.
+
+Na gravação, um gatilho preenche `distribuidora_id` sozinho. Sem ele, cada
+INSERT do app teria que mandar o tenant, e bastaria UMA tela esquecer para a
+linha nascer órfã.
+
+### Admin de plataforma
+
+Quem administra o produto vive em `plataforma_admins`, tabela separada — não é
+um papel em `usuarios`. Assim `usuarios.distribuidora_id` pode ser obrigatório,
+que é a garantia que torna o RLS confiável.
+
+Ele cria distribuidoras pelo app. O que **não** dá para fazer pelo app é criar
+a conta de acesso do gestor: isso exige a chave `service_role`, que ignora RLS
+e não pode viver no navegador. A tela de confirmação mostra os dois passos que
+faltam (painel do Supabase + um INSERT). Uma Edge Function resolveria isso.
+
+**O admin de plataforma enxerga a operação de todas as distribuidoras** — é o
+que permite dar suporte, e é uma decisão de privacidade consciente. Para
+restringir, tire `sou_admin_plataforma()` das políticas de `select`.
+
 ## Banco de dados
 
 Os dados vivem num Postgres no **Supabase** — 21 tabelas em `public`, criadas
@@ -222,6 +250,7 @@ As migrações rodam no SQL Editor do Supabase, em ordem:
 | `0004_dados_reais.sql` | Cadastros da operação — **modelo para preencher** |
 | `0005_coordenadas_reais.sql` | Adiciona lat/lng. Só cria colunas, seguro rodar |
 | `0006_autenticacao_e_rls.sql` | Supabase Auth e RLS fechado. **Leia antes de rodar** |
+| `0007_multiempresa.sql` | Separa as distribuidoras por tenant. **Leia antes de rodar** |
 
 O `0002_seed.sql`, que carregava a demonstração, foi removido: ele começava
 com um `truncate` de tudo, e reaplicar as migrações em ordem apagaria dados

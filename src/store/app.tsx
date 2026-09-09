@@ -10,6 +10,7 @@ import {
 } from 'react';
 import type {
   Account,
+  Distribuidora,
   AppNotification,
   CartLine,
   CashEntry,
@@ -80,6 +81,20 @@ interface AppState {
   /** Autenticado, mas sem vínculo com ninguém em `usuarios`: a conta existe
    *  e não foi ligada a uma pessoa da operação. */
   semVinculo: boolean;
+  /** Quem administra o produto, não a distribuição: cria distribuidoras e o
+   *  primeiro gestor de cada uma. Não pertence a nenhuma delas. */
+  adminPlataforma: boolean;
+  /** A distribuidora de quem entrou. Ausente para admin de plataforma. */
+  distribuidora: Distribuidora | undefined;
+  /** Todas as distribuidoras — só o admin de plataforma recebe mais de uma,
+   *  porque é o RLS que decide o que volta, não o app. */
+  distribuidoras: Distribuidora[];
+  criarDistribuidora: (dados: {
+    nome: string;
+    documento: string;
+    telefone: string;
+    cidade: string;
+  }) => Promise<Distribuidora>;
   /** Devolve a mensagem de erro, ou null se entrou. */
   signIn: (email: string, senha: string) => Promise<string | null>;
   signOut: () => Promise<void>;
@@ -174,13 +189,33 @@ const AppContext = createContext<AppState | undefined>(undefined);
 /** Raio de chegada do check-in por GPS, em km. */
 const ARRIVAL_RADIUS_KM = 0.25;
 
-let idSeq = 1000;
-const nextId = (prefix: string) => `${prefix}${++idSeq}`;
+/* Identificador de registro novo, criado no aparelho.
+ *
+ * Era um contador em memória: `c1001`, `c1002`… reiniciando em 1000 a cada
+ * carregamento da página. Dois vendedores cadastrando um cliente na mesma
+ * manhã geravam o MESMO id, e como a gravação é upsert, o segundo apagava o
+ * primeiro sem erro nenhum. Com várias distribuidoras no mesmo banco, a
+ * colisão passaria de uma empresa para outra.
+ *
+ * O id precisa nascer único no aparelho porque a interface responde antes de
+ * falar com o servidor — não dá para esperar o banco atribuir. O prefixo fica
+ * só para leitura humana em log e no painel do Supabase. */
+function nextId(prefix: string) {
+  const aleatorio =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : // Contexto sem crypto (http em rede local, navegador antigo): ainda
+        // precisa ser único entre aparelhos, então entra o relógio junto.
+        `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}-${aleatorio}`;
+}
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<User | null>(null);
   const [autenticado, setAutenticado] = useState<boolean | null>(null);
   const [semVinculo, setSemVinculo] = useState(false);
+  const [adminPlataforma, setAdminPlataforma] = useState(false);
+  const [distribuidoras, setDistribuidoras] = useState<Distribuidora[]>([]);
 
   /* Tudo começa vazio: a fonte de verdade é o Supabase, e o app só renderiza
      depois que a carga inicial chega (ver `carregando`). */
@@ -302,14 +337,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         /* Quem é a pessoa por trás da conta autenticada. Sem esse vínculo o
            app não sabe o papel, e sem papel não há Home nem permissão. */
-        void supabase.auth.getUser().then(({ data }) => {
+        void (async () => {
+          const { data } = await supabase.auth.getUser();
           if (cancelado) return;
           const eu = d.usuarios.find((u) => u.authId && u.authId === data.user?.id);
           setSession(eu ?? null);
-          setSemVinculo(!eu);
-        });
 
-        setCarregando(false);
+          /* Sem vínculo com a equipe, a conta ainda pode ser de quem
+             administra o produto. É a diferença entre "avisar que falta
+             configurar" e abrir a área da plataforma. */
+          const ehAdmin = eu ? false : await repo.souAdminPlataforma();
+          if (cancelado) return;
+          setAdminPlataforma(ehAdmin);
+          setSemVinculo(!eu && !ehAdmin);
+
+          /* Uma linha para a equipe (a própria distribuidora), várias para o
+             admin de plataforma. Quem decide é o RLS. */
+          try {
+            const lista = await repo.carregarDistribuidoras();
+            if (!cancelado) setDistribuidoras(lista);
+          } catch {
+            /* Banco ainda sem a migração 0007: o app continua funcionando
+               como empresa única em vez de quebrar na carga. */
+          }
+
+          /* Só agora a tela pode aparecer. Liberar antes fazia o admin de
+             plataforma ver a interface de operação piscar — com nome vazio e
+             rota de outra pessoa — até a identidade chegar. */
+          if (!cancelado) setCarregando(false);
+        })();
       })
       .catch((e: unknown) => {
         if (cancelado) return;
@@ -1109,6 +1165,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   /* ---------------------------------------------------------- Sessão */
 
+  const criarDistribuidora = useCallback<AppState['criarDistribuidora']>(
+    async (dados) => {
+      const nova = await repo.criarDistribuidora(dados);
+      setDistribuidoras((ds) => [...ds, nova].sort((a, b) => a.nome.localeCompare(b.nome)));
+      toast(`${nova.nome} criada`, 'ok');
+      return nova;
+    },
+    [toast],
+  );
+
   const signIn = useCallback(async (email: string, senha: string) => {
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
@@ -1136,6 +1202,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     setSession(null);
     setSemVinculo(false);
+    setAdminPlataforma(false);
+    setDistribuidoras([]);
     clearCart();
   }, [clearCart]);
 
@@ -1143,6 +1211,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     () => ({
       carregando, erroCarga, recarregar,
       autenticado, session, semVinculo, signIn, signOut,
+      adminPlataforma,
+      distribuidoras,
+      distribuidora: session
+        ? distribuidoras.find((d) => d.id === session.distribuidoraId) ?? distribuidoras[0]
+        : undefined,
+      criarDistribuidora,
       connection, pendingSync, syncNow, filaPersistente: filaPersistente(),
       customers, orders, routes, vehicles, stock, stockMoves, purchases,
       accounts, cashEntries, incidents, returns, notifications,
@@ -1159,7 +1233,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }),
     [
       carregando, erroCarga, recarregar,
-      autenticado, session, semVinculo, signIn, signOut, connection, pendingSync, syncNow,
+      autenticado, session, semVinculo, signIn, signOut,
+      adminPlataforma, distribuidoras, criarDistribuidora,
+      connection, pendingSync, syncNow,
       customers, orders, routes, vehicles, stock, stockMoves, purchases,
       accounts, cashEntries, incidents, returns, notifications,
       position, gpsIndisponivel, distanceToNextStop, activeRoute,

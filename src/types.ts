@@ -15,6 +15,8 @@ export interface User {
   /** Conta de acesso (auth.users) ligada a esta pessoa. Ausente = pessoa
    *  cadastrada na operação que ainda não pode entrar no app. */
   authId?: string;
+  /** Distribuidora a que a pessoa pertence. Uma pessoa opera uma empresa. */
+  distribuidoraId?: string;
   name: string;
   role: Role;
   phone: string;
@@ -302,4 +304,18 @@ export type ConnectionState = 'online' | 'sincronizando' | 'offline';
 export interface CartLine {
   productId: string;
   quantity: number;
+}
+
+/* ------------------------------------------------------------ Plataforma */
+
+/* Cada distribuidora é um tenant: opera isolada das outras dentro do mesmo
+   banco, separada por RLS. */
+export interface Distribuidora {
+  id: string;
+  nome: string;
+  documento: string;
+  telefone: string;
+  cidade: string;
+  ativa: boolean;
+  criadaEm: string;
 }
