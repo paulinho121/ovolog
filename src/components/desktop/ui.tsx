@@ -315,11 +315,16 @@ export function DetalheVazio({ mensagem, icone }: { mensagem: string; icone?: Re
 
 /* ------------------------------------------------------------ Indicador */
 
+/* O ladrilho de ícone é da mesma família de cor do valor, não de uma paleta
+   decorativa. Cinco matizes diferentes em cinco indicadores neutros fariam a
+   cor parar de significar: hoje verde quer dizer "recebido" e vermelho
+   "vencido", e é esse atalho que deixa o painel legível de relance. */
 export function Indicador({
   rotulo,
   valor,
   detalhe,
   tom = 'neutro',
+  icone,
   grafico,
   aoClicar,
 }: {
@@ -327,6 +332,8 @@ export function Indicador({
   valor: ReactNode;
   detalhe?: ReactNode;
   tom?: 'neutro' | 'marca' | 'ok' | 'ruim' | 'atencao';
+  /** Ícone do ladrilho à esquerda. */
+  icone?: ReactNode;
   grafico?: ReactNode;
   aoClicar?: () => void;
 }) {
@@ -337,21 +344,40 @@ export function Indicador({
     ruim: 'text-bad-700',
     atencao: 'text-warn-700',
   }[tom];
+  const ladrilho = {
+    neutro: 'bg-shell-100 text-shell-600',
+    marca: 'bg-brand-50 text-brand-700',
+    ok: 'bg-ok-50 text-ok-700',
+    ruim: 'bg-bad-50 text-bad-700',
+    atencao: 'bg-warn-50 text-warn-700',
+  }[tom];
   const Tag = (aoClicar ? 'button' : 'div') as 'div';
   return (
     <Tag
       onClick={aoClicar}
       className={cn(
-        'rounded-card border border-shell-200 bg-white p-4 text-left shadow-card',
+        'rounded-card border border-shell-200 bg-white p-5 text-left shadow-card',
         aoClicar && 'w-full transition-colors hover:border-shell-300 hover:bg-shell-50',
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <span className="text-meta font-medium text-shell-600">{rotulo}</span>
-        {grafico}
+      <div className="flex items-start gap-3">
+        {icone && (
+          <span
+            className={cn('grid size-10 shrink-0 place-items-center rounded-xl', ladrilho)}
+            aria-hidden="true"
+          >
+            {icone}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <span className="text-meta font-medium text-shell-600">{rotulo}</span>
+            {grafico}
+          </div>
+          <div className={cn('mt-1 text-display font-bold tnum leading-none', cor)}>{valor}</div>
+          {detalhe && <div className="mt-1.5 text-meta text-shell-500">{detalhe}</div>}
+        </div>
       </div>
-      <div className={cn('mt-1.5 text-display font-bold tnum leading-none', cor)}>{valor}</div>
-      {detalhe && <div className="mt-1.5 text-meta text-shell-500">{detalhe}</div>}
     </Tag>
   );
 }

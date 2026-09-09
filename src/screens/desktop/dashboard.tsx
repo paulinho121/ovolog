@@ -1,5 +1,13 @@
 import { useMemo } from 'react';
-import { ArrowRight, TrendingUp, Truck } from 'lucide-react';
+import {
+  ArrowRight,
+  Banknote,
+  CalendarClock,
+  Percent,
+  ShoppingBag,
+  TrendingUp,
+  Truck,
+} from 'lucide-react';
 import { BotaoD, Indicador, Pagina, Painel } from '../../components/desktop/ui';
 import { BarChart, RankBars, Sparkline } from '../../components/charts';
 import { MapCanvas } from '../../components/map/MapCanvas';
@@ -57,7 +65,10 @@ export function DashboardDesktop() {
       d.setDate(d.getDate() - i);
       const chave = d.toDateString();
       dias.push({
-        label: ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'][d.getDay()],
+        /* Data no eixo, não a inicial do dia. `Q S S D S T Q` obriga quem lê
+           a contar de trás para frente para saber de que dia é a barra —
+           e duas iniciais Q e duas S tornam isso ambíguo. */
+        label: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`,
         value: orders
           .filter((o) => new Date(o.createdAt).toDateString() === chave)
           .reduce((s, o) => s + orderTotal(o), 0),
@@ -107,13 +118,14 @@ export function DashboardDesktop() {
         </>
       }
     >
-      <div className="space-y-5 p-8 pt-5">
+      <div className="space-y-6 p-8 pt-6">
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
           <Indicador
             rotulo="Vendas hoje"
             valor={moneyShort(vendas)}
             detalhe={`${num(pedidosHoje.length)} pedidos`}
             tom="marca"
+            icone={<ShoppingBag size={20} />}
             grafico={<TrendingUp size={16} className="text-brand-600" />}
           />
           <Indicador
@@ -121,6 +133,7 @@ export function DashboardDesktop() {
             valor={pct(margem)}
             detalhe={moneyShort(vendas - custo)}
             tom={margem > 0.2 ? 'ok' : 'atencao'}
+            icone={<Percent size={20} />}
             grafico={<Sparkline values={serie.map((d) => d.value)} />}
           />
           <Indicador
@@ -128,6 +141,7 @@ export function DashboardDesktop() {
             valor={moneyShort(recebido)}
             detalhe={`${moneyShort(accountsTotal(accounts, 'receber'))} a receber`}
             tom="ok"
+            icone={<Banknote size={20} />}
             aoClicar={() => navigate('finance')}
           />
           <Indicador
@@ -135,12 +149,14 @@ export function DashboardDesktop() {
             valor={moneyShort(accountsTotal(accounts, 'receber', 'vencido'))}
             detalhe={`${vencidas.length} contas`}
             tom={vencidas.length ? 'ruim' : 'neutro'}
+            icone={<CalendarClock size={20} />}
             aoClicar={() => navigate('finance')}
           />
           <Indicador
             rotulo="Veículos em rota"
             valor={num(emRota.length)}
             detalhe={`${vehicles.length} na frota`}
+            icone={<Truck size={20} />}
             aoClicar={() => navigate('fleet')}
           />
         </div>

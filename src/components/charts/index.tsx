@@ -163,9 +163,25 @@ export function RankBars({
     <ul className="space-y-3" aria-label={label}>
       {data.map((d, i) => (
         <li key={`${d.label}-${i}`}>
-          <div className="mb-1 flex items-baseline justify-between gap-3">
-            <span className="flex min-w-0 items-baseline gap-1.5">
-              <span className="text-meta font-bold tnum text-shell-400">{i + 1}</span>
+          <div className="mb-1.5 flex items-center justify-between gap-3">
+            <span className="flex min-w-0 items-center gap-2">
+              {/* Posição é informação, não enfeite: os três primeiros ganham
+                  peso porque é isso que se procura num ranking. Do quarto em
+                  diante o número volta a ser discreto. */}
+              <span
+                className={cn(
+                  'grid size-6 shrink-0 place-items-center rounded-full text-micro font-bold tnum',
+                  i === 0
+                    ? 'bg-brand-100 text-brand-800 ring-1 ring-brand-200'
+                    : i === 1
+                      ? 'bg-shell-200 text-shell-700'
+                      : i === 2
+                        ? 'bg-warn-50 text-warn-700'
+                        : 'text-shell-500',
+                )}
+              >
+                {i + 1}
+              </span>
               <span className="truncate text-body font-semibold text-shell-900">{d.label}</span>
             </span>
             <span className="shrink-0 text-body font-bold tnum text-shell-900">
