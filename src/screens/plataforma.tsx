@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Building2, CircleCheck, LoaderCircle, Plus, TriangleAlert } from 'lucide-react';
+import { Building2, CircleCheck, LoaderCircle, LogIn, Plus, TriangleAlert } from 'lucide-react';
 import { AppBar, Screen, StickyAction } from '../components/layout/chrome';
 import { Badge, Button, Card, ListRow, SectionTitle } from '../components/ui/primitives';
 import { Field, Input } from '../components/ui/forms';
@@ -20,8 +20,8 @@ import type { Distribuidora } from '../types';
  * navegador — se vazasse, ignoraria o RLS de todas as empresas de uma vez. Os
  * dois passos que faltam estão escritos na tela de confirmação. */
 
-export function PlataformaScreen() {
-  const { distribuidoras, signOut } = useApp();
+export function PlataformaScreen({ onEntrarNaOperacao }: { onEntrarNaOperacao?: () => void }) {
+  const { distribuidoras, signOut, session, distribuidora } = useApp();
   const [criando, setCriando] = useState(false);
 
   if (criando) return <NovaDistribuidoraScreen onFechar={() => setCriando(false)} />;
@@ -56,6 +56,22 @@ export function PlataformaScreen() {
       </header>
 
       <Screen className="space-y-4 px-4 pt-4" action="single">
+        {/* Quem administra o produto e também tem cadastro numa distribuidora
+            entra na operação dela sem trocar de conta. */}
+        {session && onEntrarNaOperacao && (
+          <Card onClick={onEntrarNaOperacao} className="flex items-center gap-3 p-4">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-100 text-brand-800">
+              <LogIn size={20} />
+            </span>
+            <span className="min-w-0 flex-1 text-left">
+              <span className="block font-semibold text-shell-900">Entrar na operação</span>
+              <span className="block truncate text-meta text-shell-600">
+                {distribuidora?.nome ?? 'Sua distribuidora'} • {session.name}
+              </span>
+            </span>
+          </Card>
+        )}
+
         {distribuidoras.length === 0 ? (
           <EmptyState
             icon={<Building2 size={28} />}

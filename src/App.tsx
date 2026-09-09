@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { motion } from 'motion/react';
 import { Home, Map, Menu, ShoppingCart, TriangleAlert, Users } from 'lucide-react';
 import type { ComponentType, CSSProperties } from 'react';
@@ -417,6 +418,8 @@ function Shell() {
    quem olha, de "não tem nada cadastrado". */
 function Boot() {
   const { autenticado, adminPlataforma, carregando, erroCarga, recarregar } = useApp();
+  /* Admin que escolheu entrar na operação de uma distribuidora. */
+  const [operando, setOperando] = useState(false);
 
   if (!supabaseConfigurado) {
     return (
@@ -448,10 +451,11 @@ function Boot() {
 
   if (carregando) return <SplashScreen legenda="Carregando a operação…" />;
 
-  /* Quem administra o produto não opera nenhuma distribuidora: não tem rota,
-     nem carrinho, nem Home por perfil. Cai numa área própria, fora da pilha
-     de navegação da operação. */
-  if (adminPlataforma) return <PlataformaScreen />;
+  /* Quem administra o produto abre na área da plataforma, não na operação.
+     Se também tiver cadastro numa distribuidora, entra nela por ali. */
+  if (adminPlataforma && !operando) {
+    return <PlataformaScreen onEntrarNaOperacao={() => setOperando(true)} />;
+  }
 
   return (
     <NavigationProvider>

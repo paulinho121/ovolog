@@ -343,10 +343,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const eu = d.usuarios.find((u) => u.authId && u.authId === data.user?.id);
           setSession(eu ?? null);
 
-          /* Sem vínculo com a equipe, a conta ainda pode ser de quem
-             administra o produto. É a diferença entre "avisar que falta
-             configurar" e abrir a área da plataforma. */
-          const ehAdmin = eu ? false : await repo.souAdminPlataforma();
+          /* A checagem de plataforma é INDEPENDENTE de ter vínculo com uma
+             equipe. Quem administra o produto costuma também ter um cadastro
+             na primeira distribuidora — foi assim que entrou no app antes de
+             existir multiempresa. Condicionar a checagem a "não ter equipe"
+             deixava justamente essa pessoa presa na operação, sem nunca
+             enxergar a área que ela criou. */
+          const ehAdmin = await repo.souAdminPlataforma();
           if (cancelado) return;
           setAdminPlataforma(ehAdmin);
           setSemVinculo(!eu && !ehAdmin);
