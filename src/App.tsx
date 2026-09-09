@@ -17,7 +17,7 @@ import { cn } from './lib/utils';
 import { moneyShort, num } from './lib/format';
 import { orderTotal, ordersOfDay, routeProgress } from './lib/domain';
 
-import { ForgotScreen, LoginScreen, SplashScreen } from './screens/auth';
+import { ForgotScreen, LoginScreen, SemVinculo, SplashScreen } from './screens/auth';
 import { PlataformaScreen } from './screens/plataforma';
 import { HomeScreen } from './screens/home';
 import {
@@ -417,7 +417,8 @@ function Shell() {
    apareceriam por um instante com listas vazias — que é indistinguível, para
    quem olha, de "não tem nada cadastrado". */
 function Boot() {
-  const { autenticado, adminPlataforma, carregando, erroCarga, recarregar } = useApp();
+  const { autenticado, adminPlataforma, semVinculo, carregando, erroCarga, recarregar } =
+    useApp();
   /* Admin que escolheu entrar na operação de uma distribuidora. */
   const [operando, setOperando] = useState(false);
 
@@ -456,6 +457,11 @@ function Boot() {
   if (adminPlataforma && !operando) {
     return <PlataformaScreen onEntrarNaOperacao={() => setOperando(true)} />;
   }
+
+  /* Autenticado, mas a conta não está ligada a ninguém em `usuarios` nem é
+     admin de plataforma. Entrar na operação aqui abriria a interface inteira
+     com sessão vazia, e o app pareceria quebrado em vez de mal configurado. */
+  if (semVinculo) return <SemVinculo />;
 
   return (
     <NavigationProvider>

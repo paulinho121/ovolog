@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowRight, Eye, EyeOff, LoaderCircle, Mail, TriangleAlert } from 'lucide-react';
 import { useApp } from '../store/app';
 import { MarcaOvolog } from '../components/ui/marca';
@@ -44,7 +44,7 @@ export function SplashScreen({ legenda }: { legenda?: string } = {}) {
 /* ---------------------------------------------------------------- Login */
 
 export function LoginScreen() {
-  const { signIn, semVinculo, signOut } = useApp();
+  const { signIn } = useApp();
   const [recuperando, setRecuperando] = useState(false);
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -55,7 +55,6 @@ export function LoginScreen() {
   /* Autenticado mas sem pessoa correspondente em `usuarios`. Acontece quando
      alguém cria o acesso no painel do Supabase e esquece de ligar à equipe —
      e sem isso o app não sabe o papel, então não há Home para mostrar. */
-  if (semVinculo) return <SemVinculo onSair={() => void signOut()} />;
   if (recuperando) return <ForgotScreen onBack={() => setRecuperando(false)} />;
 
   async function entrar() {
@@ -163,32 +162,69 @@ export function LoginScreen() {
 /* ------------------------------------------------- Conta sem vínculo */
 
 /* O acesso existe e a senha está certa, mas ninguém em `usuarios` aponta para
-   esta conta. Deixar entrar sem papel definido daria uma Home vazia e sem
-   explicação; dizer o que falta resolve em um minuto para quem administra. */
-function SemVinculo({ onSair }: { onSair: () => void }) {
+   esta conta, e ela também não é admin de plataforma.
+
+   Deixar entrar assim dá o pior resultado possível: o app abre a operação
+   com sessão vazia — indicadores zerados, "Sem sessão" no perfil — e quem
+   olha conclui que o sistema está quebrado, quando falta um vínculo de um
+   comando de distância. */
+export function SemVinculo() {
+  const { signOut } = useApp();
+  const [email, setEmail] = useState<string | null>(null);
+
+  /* Mostrar o e-mail de quem está logado poupa a primeira dúvida de quem vai
+     resolver: saber POR QUAL conta a pessoa entrou. Sem isso, o suporte começa
+     perguntando o óbvio. */
+  useEffect(() => {
+    void supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
+  }, []);
+
   return (
     <div
       className="flex min-h-screen flex-col bg-white px-6"
-      style={{ paddingTop: 'calc(var(--safe-top) + 4rem)' }}
+      style={{ paddingTop: 'calc(var(--safe-top) + 3rem)' }}
     >
       <div className="grid size-14 place-items-center rounded-2xl bg-warn-50 text-warn-700">
         <TriangleAlert size={26} />
       </div>
       <h1 className="mt-5 text-display font-bold tracking-tight text-shell-900">
-        Acesso sem equipe vinculada
+        Falta ligar esta conta
       </h1>
       <p className="mt-2 text-body text-shell-600">
-        Sua senha está correta, mas esta conta ainda não foi ligada a ninguém da operação —
-        então o app não sabe qual é o seu papel.
+        O acesso funcionou{email ? <> como <strong className="text-shell-900">{email}</strong></> : null}
+        , mas a conta ainda não está ligada a nenhuma pessoa da operação nem à administração
+        da plataforma — então o app não sabe o que mostrar.
       </p>
+
       <Card className="mt-6 p-4">
-        <p className="text-meta text-shell-700">
-          Peça ao gestor para vincular seu acesso ao seu cadastro. As instruções estão em
-          <strong> supabase/migrations/0006_autenticacao_e_rls.sql</strong>.
+        <p className="text-meta font-semibold text-shell-900">Se esta é a conta master</p>
+        <p className="mt-1 text-meta text-shell-700">
+          Rode <strong>0007_multiempresa.sql</strong> e depois, no SQL Editor:
+        </p>
+        <pre className="mt-2 overflow-x-auto rounded-lg bg-shell-100 p-3 text-micro leading-relaxed text-shell-800">
+{`insert into plataforma_admins (auth_id, nome)
+select id, 'Seu nome' from auth.users
+ where email = '${email ?? "seu@email.com"}'
+    on conflict (auth_id) do nothing;`}
+        </pre>
+      </Card>
+
+      <Card className="mt-3 p-4">
+        <p className="text-meta font-semibold text-shell-900">Se você é da equipe</p>
+        <p className="mt-1 text-meta text-shell-700">
+          Peça ao gestor da distribuidora para ligar seu acesso ao seu cadastro. As instruções
+          estão no rodapé de <strong>0006_autenticacao_e_rls.sql</strong>.
         </p>
       </Card>
+
       <div className="flex-1" />
-      <Button variant="secondary" size="lg" block onClick={onSair} className="mb-6">
+      <Button
+        variant="secondary"
+        size="lg"
+        block
+        onClick={() => void signOut()}
+        className="mb-6"
+      >
         Sair
       </Button>
     </div>
