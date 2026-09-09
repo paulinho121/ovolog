@@ -10,69 +10,86 @@
 -- `contas.pedido_id` é `on delete set null`, então a conta a receber ficaria
 -- viva e sem origem, cobrando um cliente por um pedido que não existe mais.
 --
+-- Sem tabelas temporárias de propósito: o SQL Editor do Supabase não as
+-- mantém entre instruções, e o script quebrava com "relation does not exist".
+-- Cada comando repete o critério e se basta.
+--
 -- ---------------------------------------------------------------------------
 -- COMO USAR
 --
 -- 1. Rode como está. A última linha é `rollback`, então NADA é gravado: você
 --    vê exatamente o que sairia.
 -- 2. Confira as listas nos resultados.
--- 3. Trocando a última linha para `commit`, rode de novo para aplicar.
+-- 3. Troque a última linha para `commit` e rode de novo para aplicar.
+--
+-- O CRITÉRIO é "pedido que usa produto de exemplo do 0004". Para escolher por
+-- número, troque cada bloco `exists (...)` por:  p.numero in ('0001','0002')
 -- ---------------------------------------------------------------------------
 
 begin;
 
 -- =====================================================================
--- 1. Quais pedidos
+-- 1. O que será removido
 -- =====================================================================
 
--- Aqui: os que usam algum produto de exemplo do 0004. Para escolher por
--- número, troque por:  where p.numero in ('0001', '0002')
-create temporary table pedidos_teste as
-select p.id, p.numero, p.cliente_id, p.status, p.pagamento, p.criado_em
+select 'PEDIDOS' as etapa, p.numero, p.status, p.pagamento, p.criado_em,
+       c.nome_fantasia as cliente,
+       (select sum(i.quantidade * i.preco_unitario) from pedido_itens i
+         where i.pedido_id = p.id) - p.desconto as total
   from pedidos p
- where exists (
-   select 1 from pedido_itens i
-    where i.pedido_id = p.id and i.produto_id like '%EXEMPLO%'
+  join clientes c on c.id = p.cliente_id
+ where exists (select 1 from pedido_itens i
+                where i.pedido_id = p.id and i.produto_id like '%EXEMPLO%')
+ order by p.criado_em;
+
+select 'CONTAS' as etapa, ct.parte_nome, ct.valor, ct.valor_pago, ct.status, ct.vencimento
+  from contas ct
+ where ct.pedido_id in (
+   select p.id from pedidos p
+    where exists (select 1 from pedido_itens i
+                   where i.pedido_id = p.id and i.produto_id like '%EXEMPLO%')
  );
 
-select 'PEDIDOS QUE SERÃO REMOVIDOS' as etapa, * from pedidos_teste order by criado_em;
-
--- =====================================================================
--- 2. Contas e caixa
--- =====================================================================
-
--- A conta a receber some junto: ela existe por causa do pedido.
-select 'CONTAS QUE SERÃO REMOVIDAS' as etapa, c.id, c.parte_nome, c.valor, c.status
-  from contas c
- where c.pedido_id in (select id from pedidos_teste);
-
-delete from contas where pedido_id in (select id from pedidos_teste);
-
 -- O lançamento de caixa NÃO tem vínculo com o pedido — só a descrição
--- ("Recebimento <cliente>") e o horário. Por isso ele é apenas LISTADO, e a
--- remoção fica por sua conta: adivinhar qual lançamento pertence a qual
--- pedido seria apagar dinheiro por heurística.
-select 'CAIXA — CONFIRA E APAGUE À MÃO SE FOR DE TESTE' as etapa,
-       l.id, l.descricao, l.valor, l.em
+-- ("Recebimento <cliente>") e o horário. Por isso ele é apenas LISTADO: apagar
+-- dinheiro por semelhança de horário não é aceitável. Confira e remova à mão
+-- o que reconhecer, com:  delete from caixa_lancamentos where id = '...';
+select 'CAIXA — CONFIRA E APAGUE À MÃO' as etapa, l.id, l.descricao, l.valor, l.em
   from caixa_lancamentos l
- where l.em between (select min(criado_em) - interval '1 hour' from pedidos_teste)
-                and (select max(criado_em) + interval '1 hour' from pedidos_teste)
+ where l.em between
+       (select min(p.criado_em) - interval '1 hour' from pedidos p
+         where exists (select 1 from pedido_itens i
+                        where i.pedido_id = p.id and i.produto_id like '%EXEMPLO%'))
+   and (select max(p.criado_em) + interval '1 hour' from pedidos p
+         where exists (select 1 from pedido_itens i
+                        where i.pedido_id = p.id and i.produto_id like '%EXEMPLO%'))
  order by l.em;
 
 -- =====================================================================
--- 3. Os pedidos
+-- 2. Remover
 -- =====================================================================
+
+-- A conta sai ANTES do pedido: com `on delete set null`, apagar o pedido
+-- primeiro deixaria a conta órfã em vez de removê-la.
+delete from contas
+ where pedido_id in (
+   select p.id from pedidos p
+    where exists (select 1 from pedido_itens i
+                   where i.pedido_id = p.id and i.produto_id like '%EXEMPLO%')
+ );
 
 -- `pedido_itens` e `rota_parada_pedidos` caem por cascata.
-delete from pedidos where id in (select id from pedidos_teste);
+delete from pedidos p
+ where exists (select 1 from pedido_itens i
+                where i.pedido_id = p.id and i.produto_id like '%EXEMPLO%');
 
 -- =====================================================================
--- 4. Recalcular o que os pedidos tinham somado
+-- 3. Recalcular o que os pedidos tinham somado
 -- =====================================================================
 
--- Recalcular do zero, e não subtrair, é de propósito: subtração erra se algo
--- já estiver fora de lugar, e o erro fica invisível. O recálculo é
--- autocorretivo — vale mesmo que o estado anterior estivesse errado.
+-- Recalcular do zero, e não subtrair, é de propósito: subtração erra em
+-- silêncio se o estado anterior já estivesse fora de lugar. O recálculo é
+-- autocorretivo — vale mesmo que algo já estivesse errado.
 
 -- `reservado` = o que está vendido e ainda não entregue.
 update estoque e
@@ -86,8 +103,8 @@ update estoque e
 
 -- `total_comprado` = tudo que o cliente já comprou de fato.
 --
--- O total é por PEDIDO (soma dos itens menos o desconto daquele pedido) e só
--- depois somado entre pedidos. Descontar na soma geral daria outro número.
+-- O total é por PEDIDO (itens menos o desconto daquele pedido) e só depois
+-- somado entre pedidos. Descontar na soma geral daria outro número.
 -- `greatest(0, ...)` espelha o app, que nunca deixa um total ficar negativo.
 update clientes c
    set total_comprado = coalesce((
@@ -114,17 +131,17 @@ update clientes c
    ), 0);
 
 -- =====================================================================
--- 5. Como ficou
+-- 4. Como ficou
 -- =====================================================================
 
 select 'DEPOIS' as etapa,
-       (select count(*) from pedidos)                as pedidos,
-       (select count(*) from pedido_itens)           as itens,
-       (select count(*) from contas)                 as contas,
-       (select count(*) from caixa_lancamentos)      as caixa,
-       (select coalesce(sum(saldo), 0) from clientes)          as saldo_total,
-       (select coalesce(sum(total_comprado), 0) from clientes) as comprado_total,
-       (select coalesce(sum(reservado), 0) from estoque)       as reservado_total;
+       (select count(*) from pedidos)                           as pedidos,
+       (select count(*) from pedido_itens)                      as itens,
+       (select count(*) from contas)                            as contas,
+       (select count(*) from caixa_lancamentos)                 as caixa,
+       (select coalesce(sum(saldo), 0) from clientes)           as saldo_total,
+       (select coalesce(sum(total_comprado), 0) from clientes)  as comprado_total,
+       (select coalesce(sum(reservado), 0) from estoque)        as reservado_total;
 
 -- ---------------------------------------------------------------------------
 -- Troque para `commit;` quando as listas acima estiverem certas.
