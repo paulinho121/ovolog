@@ -44,7 +44,7 @@ import {
   removerDoDisco,
   type ItemFila,
 } from '../lib/fila';
-import { distanciaKm, temCoordenada, type Coord } from '../lib/mapa';
+import { distanciaKm, lembrarUltimoLocal, temCoordenada, type Coord } from '../lib/mapa';
 import { formaDaCondicao } from '../lib/domain';
 import { carregarEstado } from '../data/repositorio';
 import { supabase, supabaseConfigurado } from '../lib/supabase';
@@ -557,7 +557,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const id = navigator.geolocation.watchPosition(
       (leitura) => {
         setGpsIndisponivel(null);
-        setPosition({ lat: leitura.coords.latitude, lng: leitura.coords.longitude });
+        const ponto = { lat: leitura.coords.latitude, lng: leitura.coords.longitude };
+        setPosition(ponto);
+        lembrarUltimoLocal(ponto);
       },
       (erro) => {
         /* Falhar aqui é comum e não é excepcional: túnel, galpão, prédio alto.
@@ -597,7 +599,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     navigator.geolocation.getCurrentPosition(
       (leitura) => {
         setLocalizandoMe(false);
-        setMeuLocal({ lat: leitura.coords.latitude, lng: leitura.coords.longitude });
+        const ponto = { lat: leitura.coords.latitude, lng: leitura.coords.longitude };
+        setMeuLocal(ponto);
+        /* Da próxima vez o mapa já abre nesta região, em vez de num centro
+           padrão que pode estar a dois mil quilômetros. */
+        lembrarUltimoLocal(ponto);
       },
       (erro) => {
         setLocalizandoMe(false);

@@ -29,10 +29,49 @@ export interface Coord {
   lng: number;
 }
 
-/** Centro padrão quando não há nada para enquadrar: São Paulo. Só é usado
- *  com o mapa vazio — havendo uma parada ou um veículo, o mapa enquadra. */
-export const CENTRO_PADRAO: Coord = { lat: -23.5505, lng: -46.6333 };
-export const ZOOM_PADRAO = 11;
+/* Onde o mapa abre quando não há nada para enquadrar.
+ *
+ * Era São Paulo, fixo no código. Uma distribuidora em Fortaleza abria o app e
+ * via a Grande São Paulo — o app afirmando, com uma cidade inteira desenhada,
+ * algo que ele não sabe.
+ *
+ * Agora a ordem é: o último lugar onde a pessoa se localizou; se nunca se
+ * localizou, o Brasil inteiro. Um país inteiro na tela comunica "ainda não sei
+ * onde você opera" — que é a verdade — em vez de apontar a cidade errada. */
+
+const CHAVE_ULTIMO_LOCAL = 'ovolog:ultimo-local';
+
+/** Enquadramento do Brasil. Zoom baixo de propósito: é um "não sei ainda". */
+export const CENTRO_BRASIL: Coord = { lat: -14.24, lng: -51.93 };
+export const ZOOM_BRASIL = 4;
+
+/** Guarda onde a pessoa está para o próximo mapa já abrir na região certa. */
+export function lembrarUltimoLocal(ponto: Coord) {
+  try {
+    localStorage.setItem(CHAVE_ULTIMO_LOCAL, JSON.stringify(ponto));
+  } catch {
+    /* Armazenamento bloqueado: o mapa só abre mais longe na próxima vez. */
+  }
+}
+
+export function ultimoLocalConhecido(): Coord | null {
+  try {
+    const bruto = localStorage.getItem(CHAVE_ULTIMO_LOCAL);
+    if (!bruto) return null;
+    const p: unknown = JSON.parse(bruto);
+    return temCoordenada(p as { lat?: number; lng?: number })
+      ? (p as Coord)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Centro e zoom de partida, na melhor informação disponível. */
+export function enquadramentoInicial(): { centro: Coord; zoom: number } {
+  const ultimo = ultimoLocalConhecido();
+  return ultimo ? { centro: ultimo, zoom: 12 } : { centro: CENTRO_BRASIL, zoom: ZOOM_BRASIL };
+}
 
 /** Um registro sem coordenada não pode ir para o mapa. Cliente cadastrado
  *  antes da geocodificação cai neste caso — some do mapa, mas continua na

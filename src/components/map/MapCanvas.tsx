@@ -5,11 +5,10 @@ import 'leaflet/dist/leaflet.css';
 import { cn } from '../../lib/utils';
 import type { Customer, RouteStop, Vehicle } from '../../types';
 import {
-  CENTRO_PADRAO,
   TILE_ATTRIBUTION,
   TILE_MAX_ZOOM,
   TILE_URL,
-  ZOOM_PADRAO,
+  enquadramentoInicial,
   temCoordenada,
   type Coord,
 } from '../../lib/mapa';
@@ -173,14 +172,26 @@ export function MapCanvas({
 
   const semCoordenada = stops.length > 0 && paradas.length === 0;
 
+  /* Mapa decorativo (card da Home, resumo da rota) sem NADA para mostrar não
+     é mapa: é uma cidade qualquer desenhada por baixo de um texto que diz que
+     não há nada. O mapa interativo continua aparecendo mesmo vazio, porque é
+     dele que sai o botão de localizar. */
+  const nadaParaMostrar =
+    !interactive &&
+    paradas.length === 0 &&
+    frota.length === 0 &&
+    !position &&
+    !meuLocal;
+
   /* --------------------------------------------------- Criação (uma vez) */
   useEffect(() => {
     if (!container.current || mapa.current) return;
     const alvo = container.current;
 
+    const partida = enquadramentoInicial();
     const m = L.map(alvo, {
-      center: [CENTRO_PADRAO.lat, CENTRO_PADRAO.lng],
-      zoom: ZOOM_PADRAO,
+      center: [partida.centro.lat, partida.centro.lng],
+      zoom: partida.zoom,
       zoomControl: false,
       // Mapa decorativo (card da Home, resumo da rota) não deve roubar o gesto
       // de rolagem da página nem responder a toque.
@@ -214,7 +225,10 @@ export function MapCanvas({
       mapa.current = null;
       camadas.current = null;
     };
-  }, [interactive]);
+    /* nadaParaMostrar entra aqui porque ele decide se o container existe.
+       Sem essa dependência, um mapa que nasceu vazio nunca seria criado
+       quando o primeiro veículo aparecesse — o efeito não rodaria de novo. */
+  }, [interactive, nadaParaMostrar]);
 
   /* ------------------------------------------------------------ Camadas */
   useEffect(() => {
@@ -319,6 +333,17 @@ export function MapCanvas({
       m.fitBounds(L.latLngBounds(pontos), { padding: [40, 40], maxZoom: 16 });
     }
   }, [focus, paradas, frota, position, meuLocal]);
+
+  if (nadaParaMostrar) {
+    return (
+      <div className={cn('grid place-items-center bg-shell-100 px-6 text-center', className)}>
+        <div>
+          <MapPinOff size={22} className="mx-auto text-shell-400" />
+          <p className="mt-2 text-meta text-shell-600">Nada para mostrar no mapa agora.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn('relative overflow-hidden bg-[#EFEDE8]', className)}>
