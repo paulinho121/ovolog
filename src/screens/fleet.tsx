@@ -6,6 +6,8 @@ import {
   Gauge,
   History,
   MapPin,
+  LoaderCircle,
+  LocateFixed,
   Timer,
   Truck,
   Wrench,
@@ -216,9 +218,13 @@ export function VehicleScreen() {
 /* --------------------------------------------------------- Rastreamento */
 
 export function TrackingScreen() {
-  const { vehicles, routes, customers, position, activeRoute } = useApp();
+  const { vehicles, routes, customers, position, activeRoute, meuLocal, localizandoMe, localizarMe } =
+    useApp();
   const { navigate, back } = useNav();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /* Centraliza no local de quem olha, uma vez, quando ele chega. Depois o
+     mapa volta a ser da mão de quem está arrastando. */
+  const [seguirMeuLocal, setSeguirMeuLocal] = useState(false);
 
   const onRoute = vehicles.filter((v) => v.status === 'em_rota');
   const selected = vehicles.find((v) => v.id === selectedId) ?? onRoute[0];
@@ -242,6 +248,10 @@ export function TrackingScreen() {
         }
         vehicles={vehicles.filter((v) => v.status !== 'manutencao')}
         position={activeRoute && selected?.id === activeRoute.vehicleId ? position : undefined}
+        meuLocal={meuLocal}
+        focus={
+          seguirMeuLocal && meuLocal ? { lat: meuLocal.lat, lng: meuLocal.lng, zoom: 15 } : undefined
+        }
         className="absolute inset-0"
         showLabels
         onStopClick={(id) => {
@@ -264,6 +274,26 @@ export function TrackingScreen() {
         <div className="rounded-xl border border-shell-200 bg-white/95 px-3 py-2 shadow-raised">
           <span className="text-meta font-bold text-shell-900">Rastreamento</span>
         </div>
+
+        <div className="flex-1" />
+
+        {/* Onde EU estou, em relação à frota. Uma leitura por toque, não
+            rastreamento: quem está no escritório não precisa ser seguido. */}
+        <button
+          onClick={() => {
+            setSeguirMeuLocal(true);
+            localizarMe();
+          }}
+          disabled={localizandoMe}
+          aria-label="Mostrar minha localização no mapa"
+          className="grid size-11 shrink-0 place-items-center rounded-xl border border-shell-200 bg-white/95 text-shell-800 shadow-raised active:bg-shell-100 disabled:opacity-60"
+        >
+          {localizandoMe ? (
+            <LoaderCircle size={20} className="animate-spin" />
+          ) : (
+            <LocateFixed size={20} className={meuLocal ? 'text-brand-700' : undefined} />
+          )}
+        </button>
       </div>
 
       {/* Seletor de veículo — rola na horizontal por cima do mapa. */}

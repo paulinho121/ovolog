@@ -97,6 +97,24 @@ function iconeVeiculo(v: Vehicle) {
   });
 }
 
+/* Quem está olhando o mapa não é um veículo, e o marcador diz isso: pino na
+   cor da marca, em vez do ponto azul pulsante do GPS em rota. Confundir os
+   dois faria o gestor achar que existe uma entrega no lugar onde ele está. */
+const iconeMeuLocal = () =>
+  L.divIcon({
+    className: 'ovolog-marcador',
+    iconSize: [30, 30],
+    iconAnchor: [15, 30],
+    html:
+      '<span class="grid size-full place-items-center rounded-full rounded-bl-none ' +
+      '-rotate-45 bg-brand-700 text-white shadow-raised ring-2 ring-white">' +
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="2.5" stroke-linecap="round" class="rotate-45">' +
+      '<circle cx="12" cy="8" r="3.2"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/>' +
+      '</svg>' +
+      '</span>',
+  });
+
 const iconePosicao = () =>
   L.divIcon({
     className: 'ovolog-marcador',
@@ -114,6 +132,7 @@ const iconePosicao = () =>
 export function MapCanvas({
   stops = [],
   position,
+  meuLocal,
   vehicles = [],
   className,
   /** Centraliza e aproxima num ponto — usado para seguir o motorista. */
@@ -125,6 +144,8 @@ export function MapCanvas({
 }: {
   stops?: MapStop[];
   position?: Coord;
+  /** Onde está quem olha o mapa. Marcador próprio, não é veículo. */
+  meuLocal?: Coord;
   vehicles?: Vehicle[];
   className?: string;
   focus?: { lat: number; lng: number; zoom: number };
@@ -258,7 +279,17 @@ export function MapCanvas({
         zIndexOffset: 1000,
       }).addTo(grupo);
     }
-  }, [paradas, frota, position, showLabels, onStopClick]);
+
+    if (meuLocal) {
+      L.marker([meuLocal.lat, meuLocal.lng], {
+        icon: iconeMeuLocal(),
+        interactive: true,
+        zIndexOffset: 1100,
+      })
+        .bindTooltip('Você está aqui', { direction: 'top', offset: [0, -30] })
+        .addTo(grupo);
+    }
+  }, [paradas, frota, position, meuLocal, showLabels, onStopClick]);
 
   /* ------------------------------------------------------ Enquadramento */
   useEffect(() => {
@@ -277,6 +308,7 @@ export function MapCanvas({
       ...frota.map((v) => [v.lat, v.lng] as [number, number]),
     ];
     if (position) pontos.push([position.lat, position.lng]);
+    if (meuLocal) pontos.push([meuLocal.lat, meuLocal.lng]);
 
     if (pontos.length === 0) return;
     jaEnquadrou.current = true;
@@ -286,7 +318,7 @@ export function MapCanvas({
     } else {
       m.fitBounds(L.latLngBounds(pontos), { padding: [40, 40], maxZoom: 16 });
     }
-  }, [focus, paradas, frota, position]);
+  }, [focus, paradas, frota, position, meuLocal]);
 
   return (
     <div className={cn('relative overflow-hidden bg-[#EFEDE8]', className)}>

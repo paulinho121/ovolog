@@ -126,6 +126,12 @@ interface AppState {
   position: Position | undefined;
   /** Motivo pelo qual não há posição, para a tela poder explicar. */
   gpsIndisponivel: string | null;
+  /** Onde está quem está OLHANDO o mapa (gestor, estoque, financeiro).
+   *  Diferente de `position`, que é o veículo em rota. */
+  meuLocal: Coord | undefined;
+  localizandoMe: boolean;
+  /** Uma leitura, sob demanda. Não liga rastreamento. */
+  localizarMe: () => void;
   /** Distância em km até a próxima parada, ou undefined sem GPS/coordenada. */
   distanceToNextStop: number | undefined;
   /** O check-in por localização só libera dentro do raio de chegada. */
@@ -242,6 +248,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [position, setPosition] = useState<Position | undefined>(undefined);
   const [gpsIndisponivel, setGpsIndisponivel] = useState<string | null>(null);
+  const [meuLocal, setMeuLocal] = useState<Coord | undefined>(undefined);
+  const [localizandoMe, setLocalizandoMe] = useState(false);
 
   const [cart, setCart] = useState<AppState['cart']>({
     customerId: null,
@@ -572,6 +580,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     return () => navigator.geolocation.clearWatch(id);
   }, [activeRoute]);
+
+  /* Localizar quem está olhando o mapa — o gestor conferindo a frota, o
+     vendedor decidindo qual cliente visitar primeiro.
+
+     É `getCurrentPosition`, uma leitura só, e não `watchPosition`: a pessoa
+     quer saber onde está AGORA em relação aos veículos, não ser acompanhada
+     o dia inteiro. Rastreamento contínuo continua existindo apenas durante
+     rota em andamento, que é quando ele serve à operação. */
+  const localizarMe = useCallback(() => {
+    if (!('geolocation' in navigator)) {
+      toast('Este aparelho não oferece localização no navegador.', 'warn');
+      return;
+    }
+    setLocalizandoMe(true);
+    navigator.geolocation.getCurrentPosition(
+      (leitura) => {
+        setLocalizandoMe(false);
+        setMeuLocal({ lat: leitura.coords.latitude, lng: leitura.coords.longitude });
+      },
+      (erro) => {
+        setLocalizandoMe(false);
+        toast(
+          erro.code === erro.PERMISSION_DENIED
+            ? 'Permissão de localização negada. Libere no navegador.'
+            : 'Não foi possível obter sua localização agora.',
+          'warn',
+        );
+      },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
+    );
+  }, [toast]);
 
   /* O marcador do veículo no mapa segue a posição do motorista. */
   useEffect(() => {
@@ -1224,6 +1263,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       customers, orders, routes, vehicles, stock, stockMoves, purchases,
       accounts, cashEntries, incidents, returns, notifications,
       position, gpsIndisponivel,
+      meuLocal, localizandoMe, localizarMe,
       distanceToNextStop,
       isAtNextStop: distanceToNextStop !== undefined && distanceToNextStop <= ARRIVAL_RADIUS_KM,
       activeRoute,
@@ -1241,7 +1281,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       connection, pendingSync, syncNow,
       customers, orders, routes, vehicles, stock, stockMoves, purchases,
       accounts, cashEntries, incidents, returns, notifications,
-      position, gpsIndisponivel, distanceToNextStop, activeRoute,
+      position, gpsIndisponivel, meuLocal, localizandoMe, localizarMe,
+      distanceToNextStop, activeRoute,
       cart, startCart, setCartQty, setDiscount, setPayment, clearCart, submitOrder,
       startRoute, arriveAtStop, completeStop, markStopNotServed, finishRoute,
       confirmDelivery, registerIncident, registerReturn,
