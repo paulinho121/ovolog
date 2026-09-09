@@ -177,3 +177,65 @@ export function ultimaCompraRotulo(
   if (cliente.lastPurchaseAt) return formatar(cliente.lastPurchaseAt);
   return cliente.totalPurchased > 0 ? 'Sem registro recente' : 'Nunca';
 }
+
+/* ------------------------------------------------- Condição de pagamento */
+
+/* A condição do cliente é texto no cadastro ("À vista", "28 dias") porque é
+   isso que a distribuidora negocia e escreve. Para a tela de pagamento ela
+   precisa virar número de dias.
+
+   Sem esta conversão o app fazia uma coisa estranha: mostrava "Condição do
+   cliente: 28 dias" na tela e usava 21 dias fixos no vencimento — o dado certo
+   à vista e o errado no banco. Vencimento errado vira conta a receber errada e
+   cobrança na data errada. */
+
+/** Dias de prazo da condição cadastrada. `null` quando é à vista. */
+export function diasDaCondicao(condicao: string | undefined): number | null {
+  if (!condicao) return null;
+  const achado = condicao.match(/(\d+)/);
+  return achado ? Number(achado[1]) : null;
+}
+
+/** A forma de pagamento que o cadastro do cliente sugere. */
+export function formaDaCondicao(
+  condicao: string | undefined,
+): 'prazo' | 'pix' {
+  return diasDaCondicao(condicao) === null ? 'pix' : 'prazo';
+}
+
+/* --------------------------------------------------------- Atraso de rota */
+
+/* "Rota atrasada" era `routes.find(r => r.status === 'em_andamento')`: QUALQUER
+   rota em andamento aparecia como atrasada, inclusive uma que acabou de sair.
+   Um painel que alerta sem motivo ensina quem olha a ignorar o alerta — e aí
+   ele também não funciona no dia em que a rota atrasa de verdade. */
+
+export interface AtrasoRota {
+  minutos: number;
+  paradasRestantes: number;
+}
+
+/** Minutos além do previsto, ou `null` se a rota está dentro do tempo. */
+export function atrasoDaRota(rota: Route, agora = new Date()): AtrasoRota | null {
+  if (rota.status !== 'em_andamento' || !rota.startedAt) return null;
+
+  const restantes = rota.stops.filter(
+    (s) => s.status !== 'concluida' && s.status !== 'nao_atendida',
+  ).length;
+  // Sem parada pendente não há o que atrasar: falta só encerrar a rota.
+  if (restantes === 0) return null;
+
+  const decorrido = (agora.getTime() - new Date(rota.startedAt).getTime()) / 60000;
+
+  /* O previsto é para a rota inteira, então comparar o tempo decorrido com ele
+     só acusa atraso no fim do dia. Comparar com o previsto ATÉ AQUI — a fatia
+     proporcional às paradas já cumpridas — acusa no meio da manhã, que é
+     quando ainda dá para remanejar. */
+  const total = rota.stops.length;
+  const cumpridas = total - restantes;
+  const previstoAteAqui = total > 0 ? (rota.estimatedMinutes * cumpridas) / total : 0;
+
+  const atraso = Math.round(decorrido - previstoAteAqui);
+  // Margem de 15 min: trânsito e um café não são atraso operacional.
+  return atraso > 15 ? { minutos: atraso, paradasRestantes: restantes } : null;
+}

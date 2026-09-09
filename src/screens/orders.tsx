@@ -11,6 +11,7 @@ import {
   SlidersHorizontal,
   Trash2,
   X,
+  TriangleAlert,
 } from 'lucide-react';
 import { AppBar, Screen, StickyAction, TabHeader } from '../components/layout/chrome';
 import {
@@ -43,8 +44,8 @@ import {
 import { useApp, useCustomer, useOrder } from '../store/app';
 import { useNav, useParams } from '../store/navigation';
 import { products } from '../data/catalog';
-import { available, orderBoxes, orderSubtotal, orderTotal } from '../lib/domain';
-import { dateTime, fullDate, money, num, shortDate } from '../lib/format';
+import { available, diasDaCondicao, orderBoxes, orderSubtotal, orderTotal } from '../lib/domain';
+import { dateTime, fullDate, money, num, relativeDay, shortDate } from '../lib/format';
 import type { PaymentMethod, ProductKind } from '../types';
 
 /* O caminho cliente → produtos → carrinho → pagamento → confirmação é o
@@ -414,8 +415,18 @@ export function PaymentScreen() {
   const { cart, setPayment, submitOrder, customers } = useApp();
   const { navigate, replace } = useNav();
   const customer = customers.find((c) => c.id === cart.customerId);
-  const [days, setDays] = useState(21);
+
+  /* O prazo começa no que está cadastrado para este cliente. Antes eram 21
+     dias fixos, enquanto a própria tela exibia "Condição do cliente: 28 dias"
+     logo acima — o dado certo à vista e o errado indo para o banco. */
+  const diasDoCadastro = diasDaCondicao(customer?.paymentTerms);
+  const [days, setDays] = useState(diasDoCadastro ?? 21);
   const [installments, setInstallments] = useState(1);
+
+  /* Mudar o prazo continua permitido: quem está na frente do cliente decide.
+     O que não pode é a divergência passar despercebida e virar cobrança na
+     data errada. */
+  const divergeDoCadastro = diasDoCadastro !== null && days !== diasDoCadastro;
 
   const subtotal = cart.lines.reduce(
     (s, l) => s + l.quantity * (products.find((p) => p.id === l.productId)?.price ?? 0),
@@ -487,6 +498,15 @@ export function PaymentScreen() {
               <p className="mt-2 text-meta text-shell-600">
                 Vence em <strong className="text-shell-900">{fullDate(dueDate)}</strong>
               </p>
+              {divergeDoCadastro && (
+                <p className="mt-2 flex items-start gap-1.5 text-meta font-semibold text-warn-700">
+                  <TriangleAlert size={14} className="mt-0.5 shrink-0" />
+                  <span>
+                    A condição cadastrada é {customer?.paymentTerms}. Este pedido está saindo
+                    em {days} dias.
+                  </span>
+                </p>
+              )}
 
               <span className="mb-2 mt-4 block text-meta font-semibold text-shell-700">Parcelas</span>
               <div className="flex gap-2">
@@ -664,6 +684,13 @@ export function OrdersScreen() {
       .slice(0, 60);
   }, [orders, customers, filter, query, payment, today]);
 
+  /* O pedido mais recente dá referência temporal ao vazio: "nenhum hoje, o
+     último foi anteontem" responde muito mais que "nenhum encontrado". */
+  const ultimoPedido = useMemo(
+    () => [...orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0],
+    [orders],
+  );
+
   const countOf = (f: OrderFilter) =>
     orders.filter((o) =>
       f === 'hoje'
@@ -708,16 +735,27 @@ export function OrdersScreen() {
 
       <Screen className="space-y-3 px-4 pt-3" action="single">
         {list.length === 0 ? (
-          <EmptyState
-            title="Nenhum pedido encontrado"
-            message="Você ainda não possui pedidos para este período."
-            actionLabel="Limpar filtros"
-            onAction={() => {
-              setFilter('todos');
-              setQuery('');
-              setPayment('todos');
-            }}
-          />
+          orders.length === 0 ? (
+            <EmptyState
+              title="Nenhum pedido ainda"
+              message="Os pedidos que a equipe registrar aparecem aqui, com status de entrega e pagamento."
+              actionLabel="Criar o primeiro pedido"
+              onAction={() => navigate('customer-search', { intent: 'order' })}
+            />
+          ) : (
+            <EmptyState
+              title="Nada com esses filtros"
+              message={`Nenhum dos ${num(orders.length)} pedidos corresponde ao que está selecionado.${
+                ultimoPedido ? ` O mais recente é de ${relativeDay(ultimoPedido.createdAt)}.` : ''
+              }`}
+              actionLabel="Limpar filtros"
+              onAction={() => {
+                setFilter('todos');
+                setQuery('');
+                setPayment('todos');
+              }}
+            />
+          )
         ) : (
           list.map((o) => (
             <SwipeCard

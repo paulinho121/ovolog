@@ -347,7 +347,12 @@ se perde ao fechar — em vez de prometer o que não pode cumprir.
 
 ## Limites desta versão
 
-- **Sem separação de dados por papel**: quem entra enxerga a operação inteira.
+- **Sem separação de dados por papel no banco.** O menu "Mais" já esconde o
+  que cada perfil não usa, mas isso é organização, não segurança: o RLS
+  libera a operação inteira para qualquer pessoa da equipe.
+- **O atraso de rota é medido contra o tempo previsto**, não contra trânsito
+  real. Uma rota parada num engarrafamento aparece como atrasada, porque para
+  a operação ela está mesmo — mas o app não sabe distinguir a causa.
 - **Sem tempo real nem resolução de conflito**: dois aparelhos editando o
   mesmo pedido, o último a gravar vence. O Supabase oferece Realtime para
   isso quando fizer sentido.

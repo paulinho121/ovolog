@@ -38,7 +38,7 @@ import {
 } from '../components/domain';
 import { useApp, useCustomer } from '../store/app';
 import { useNav, useParams } from '../store/navigation';
-import { cnpj, dateTime, money, phone as fmtPhone, relativeDay } from '../lib/format';
+import { cnpj, dateTime, money, num, phone as fmtPhone, relativeDay } from '../lib/format';
 import { orderTotal, ultimaCompraRotulo } from '../lib/domain';
 import type { Customer, CustomerStatus } from '../types';
 
@@ -119,16 +119,25 @@ export function CustomersScreen() {
 
       <Screen className="space-y-3 px-4 pt-3" action="single">
         {list.length === 0 ? (
-          <EmptyState
-            title="Nenhum cliente encontrado"
-            message="Ajuste a busca ou limpe os filtros para ver todos os clientes."
-            actionLabel="Limpar filtros"
-            onAction={() => {
-              setQuery('');
-              setFilter('todos');
-              setDistrict('todos');
-            }}
-          />
+          customers.length === 0 ? (
+            <EmptyState
+              title="Nenhum cliente cadastrado"
+              message="Cadastre os comércios que a distribuidora atende. Cada um vira parada de rota e histórico de compra."
+              actionLabel="Cadastrar o primeiro cliente"
+              onAction={() => navigate('customer-new')}
+            />
+          ) : (
+            <EmptyState
+              title="Nada com esses filtros"
+              message={`Nenhum dos ${num(customers.length)} clientes corresponde ao que está selecionado.`}
+              actionLabel="Limpar filtros"
+              onAction={() => {
+                setQuery('');
+                setFilter('todos');
+                setDistrict('todos');
+              }}
+            />
+          )
         ) : (
           list.map((c) => (
             <CustomerCard

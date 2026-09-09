@@ -34,6 +34,7 @@ import { NotificationRow } from '../components/domain';
 import { useApp } from '../store/app';
 import { useNav, type ScreenName } from '../store/navigation';
 import { phone as fmtPhone } from '../lib/format';
+import type { Role } from '../types';
 
 const ROLE_LABEL: Record<string, string> = {
   vendedor: 'Vendedor',
@@ -45,34 +46,89 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 /* O menu "Mais" agrupa o que não cabe nas quatro abas principais, em três
-   blocos que espelham a estrutura da empresa (§35). */
+   blocos que espelham a estrutura da empresa (§35).
+
+   Cada item declara quem o usa. Antes o menu mostrava tudo para todos, e o
+   motorista via "Relatórios" e "Compras" — coisas que ele nunca abre e que só
+   ocupam espaço na lista que ele precisa percorrer com uma mão, dentro do
+   veículo.
+
+   Isto é ORGANIZAÇÃO, não segurança: esconder um item do menu não impede o
+   acesso aos dados. Quem protege é o RLS, e no momento ele libera a operação
+   inteira para qualquer pessoa da equipe. Separar dados por papel no banco é
+   um passo à parte. */
+
+const TODOS: Role[] = ['vendedor', 'motorista', 'estoque', 'compras', 'financeiro', 'gestor'];
 
 const GROUPS: {
   title: string;
-  items: { screen: ScreenName; label: string; icon: React.ReactNode; hint?: string }[];
+  items: {
+    screen: ScreenName;
+    label: string;
+    icon: React.ReactNode;
+    hint?: string;
+    /** Quem enxerga o item. Gestor enxerga tudo, sempre. */
+    papeis: Role[];
+  }[];
 }[] = [
   {
     title: 'Operação',
     items: [
-      { screen: 'route-history', label: 'Entregas', icon: <Package size={20} />, hint: 'Histórico de rotas e entregas' },
-      { screen: 'stock', label: 'Estoque', icon: <Warehouse size={20} />, hint: 'Saldos, lotes e movimentações' },
-      { screen: 'purchases', label: 'Compras', icon: <ShoppingBag size={20} />, hint: 'Fornecedores e entradas' },
+      {
+        screen: 'route-history',
+        label: 'Entregas',
+        icon: <Package size={20} />,
+        hint: 'Histórico de rotas e entregas',
+        papeis: ['vendedor', 'motorista', 'gestor'],
+      },
+      {
+        screen: 'stock',
+        label: 'Estoque',
+        icon: <Warehouse size={20} />,
+        hint: 'Saldos, lotes e movimentações',
+        papeis: ['estoque', 'compras', 'gestor'],
+      },
+      {
+        screen: 'purchases',
+        label: 'Compras',
+        icon: <ShoppingBag size={20} />,
+        hint: 'Fornecedores e entradas',
+        papeis: ['compras', 'estoque', 'gestor'],
+      },
     ],
   },
   {
     title: 'Gestão',
     items: [
-      { screen: 'finance', label: 'Financeiro', icon: <Wallet size={20} />, hint: 'Receber, pagar e caixa' },
-      { screen: 'fleet', label: 'Frota', icon: <Truck size={20} />, hint: 'Veículos e rastreamento' },
-      { screen: 'reports', label: 'Relatórios', icon: <FileBarChart size={20} />, hint: 'Vendas, margem e rotas' },
+      {
+        screen: 'finance',
+        label: 'Financeiro',
+        icon: <Wallet size={20} />,
+        hint: 'Receber, pagar e caixa',
+        papeis: ['financeiro', 'gestor'],
+      },
+      {
+        screen: 'fleet',
+        label: 'Frota',
+        icon: <Truck size={20} />,
+        hint: 'Veículos e rastreamento',
+        papeis: ['motorista', 'gestor'],
+      },
+      {
+        screen: 'reports',
+        label: 'Relatórios',
+        icon: <FileBarChart size={20} />,
+        hint: 'Vendas, margem e rotas',
+        papeis: ['gestor'],
+      },
     ],
   },
   {
     title: 'Sistema',
     items: [
-      { screen: 'notifications', label: 'Notificações', icon: <Bell size={20} /> },
-      { screen: 'profile', label: 'Perfil', icon: <User size={20} /> },
-      { screen: 'settings', label: 'Configurações', icon: <SettingsIcon size={20} /> },
+      { screen: 'notifications', label: 'Notificações', icon: <Bell size={20} />, papeis: TODOS },
+      { screen: 'profile', label: 'Perfil', icon: <User size={20} />, papeis: TODOS },
+      { screen: 'settings', label: 'Configurações', icon: <SettingsIcon size={20} />, papeis: TODOS },
     ],
   },
 ];
@@ -81,6 +137,13 @@ export function MoreScreen() {
   const { session, notifications } = useApp();
   const { navigate } = useNav();
   const unread = notifications.filter((n) => !n.read).length;
+
+  /* Grupo que ficou sem nenhum item some junto com o título — um cabeçalho
+     de seção sozinho é pior que a ausência dele. */
+  const grupos = GROUPS.map((g) => ({
+    ...g,
+    items: g.items.filter((i) => !session || i.papeis.includes(session.role)),
+  })).filter((g) => g.items.length > 0);
 
   return (
     <>
@@ -102,7 +165,7 @@ export function MoreScreen() {
           </button>
         </Card>
 
-        {GROUPS.map((group) => (
+        {grupos.map((group) => (
           <div key={group.title}>
             <SectionTitle>{group.title}</SectionTitle>
             <Card className="divide-y divide-shell-200 overflow-hidden">

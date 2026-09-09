@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import {
   ArrowRight,
   Boxes,
+  CheckCircle2,
   ClipboardList,
   Navigation,
   PackageCheck,
@@ -20,10 +21,13 @@ import { MapCanvas } from '../components/map/MapCanvas';
 import { useApp } from '../store/app';
 import { useNav } from '../store/navigation';
 import { products } from '../data/catalog';
+import type { Route } from '../types';
 import {
   accountsTotal,
   available,
   expiringBatches,
+  atrasoDaRota,
+  type AtrasoRota,
   nextStop,
   orderTotal,
   ordersOfDay,
@@ -31,7 +35,15 @@ import {
   routeProgress,
   stockLevel,
 } from '../lib/domain';
-import { km, money, moneyShort, num, duration, daysUntil } from '../lib/format';
+import {
+  compararComOntem,
+  km,
+  money,
+  moneyShort,
+  num,
+  duration,
+  daysUntil,
+} from '../lib/format';
 
 /* A Home muda conforme o perfil (§54). Quem está na rua abre no que vai
    fazer agora; quem está na gestão abre no que precisa decidir. */
@@ -240,7 +252,7 @@ function FieldHome() {
 /* ------------------------------------------------------------- Gestor */
 
 function ManagerHome() {
-  const { orders, customers, vehicles, cashEntries, accounts, stock, routes, notifications } = useApp();
+  const { orders, customers, vehicles, cashEntries, accounts, stock, routes } = useApp();
   const { navigate, switchTab } = useNav();
 
   const today = new Date();
@@ -254,8 +266,40 @@ function ManagerHome() {
   const lowStock = stock.filter((s) => stockLevel(s) !== 'normal');
   const overdue = accounts.filter((a) => a.kind === 'receber' && a.status === 'vencido');
   const expiring = expiringBatches(stock, 7);
-  const lateRoute = routes.find((r) => r.status === 'em_andamento');
-  const unread = notifications.filter((n) => !n.read);
+
+  /* Rota atrasada de verdade — antes era `routes.find(status ===
+     'em_andamento')`, e qualquer rota em andamento aparecia como atrasada,
+     inclusive uma que tinha acabado de sair. */
+  const rotasAtrasadas = useMemo(
+    () =>
+      routes
+        .map((r) => ({ rota: r, atraso: atrasoDaRota(r) }))
+        .filter((x): x is { rota: Route; atraso: AtrasoRota } => x.atraso !== null),
+    [routes],
+  );
+
+  /* Cliente devendo acima do limite que a própria empresa concedeu. É a
+     exceção mais cara da lista: continuar vendendo para ele aumenta a perda. */
+  const acimaDoLimite = customers.filter(
+    (c) => c.creditLimit > 0 && c.balance > c.creditLimit,
+  );
+
+  const totalExcecoes =
+    rotasAtrasadas.length +
+    overdue.length +
+    acimaDoLimite.length +
+    lowStock.length +
+    expiring.length;
+
+  /* Ontem, para os números do dia terem contra o que ser comparados. Um
+     faturamento sozinho não diz se o dia está bom — só diz que existe. */
+  const ontem = useMemo(() => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - 1);
+    return d;
+  }, [today.toDateString()]);
+  const pedidosDeOntem = useMemo(() => ordersOfDay(orders, ontem), [orders, ontem]);
+  const vendasOntem = pedidosDeOntem.reduce((s, o) => s + orderTotal(o), 0);
 
   /* O mapa da Home mostra as paradas de quem está rodando agora — sem elas
      seria só uma malha de ruas vazia. */
@@ -277,11 +321,106 @@ function ManagerHome() {
 
   return (
     <Screen className="space-y-4 px-4 pt-2">
+      {/* Exceções primeiro.
+
+          O painel abria com quatro indicadores de mesmo peso e os alertas
+          embaixo do mapa. A pergunta que o gestor faz ao abrir o app não é
+          "quanto vendi", é "o que precisa de mim agora" — e essa resposta
+          estava a duas rolagens de distância.
+
+          Quando não há exceção, o lugar não fica vazio: "está tudo em ordem"
+          é informação, e some se a seção desaparecer. */}
+      <div>
+        <SectionTitle
+          action={
+            totalExcecoes > 0 ? (
+              <span className="text-meta font-bold tnum text-bad-700">{totalExcecoes}</span>
+            ) : undefined
+          }
+        >
+          Precisa de atenção
+        </SectionTitle>
+
+        {totalExcecoes === 0 ? (
+          <Card className="flex items-center gap-3 p-4">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-ok-50 text-ok-700">
+              <CheckCircle2 size={20} />
+            </span>
+            <p className="text-body text-shell-700">
+              Operação em dia. Nenhuma rota atrasada, conta vencida ou produto abaixo do
+              mínimo.
+            </p>
+          </Card>
+        ) : (
+          <div className="space-y-2.5">
+            {rotasAtrasadas.slice(0, 2).map(({ rota, atraso }) => (
+              <AlertCard
+                key={rota.id}
+                tone="bad"
+                title={`Rota #${rota.number} atrasada`}
+                body={`${duration(atraso.minutos)} além do previsto, com ${num(atraso.paradasRestantes)} ${
+                  atraso.paradasRestantes === 1 ? 'parada' : 'paradas'
+                } por atender.`}
+                onClick={() => navigate('route', { routeId: rota.id })}
+              />
+            ))}
+
+            {acimaDoLimite.slice(0, 2).map((c) => (
+              <AlertCard
+                key={c.id}
+                tone="bad"
+                title="Cliente acima do limite"
+                body={`${c.tradeName} deve ${money(c.balance)}, acima do limite de ${money(c.creditLimit)}.`}
+                onClick={() => navigate('customer', { customerId: c.id })}
+              />
+            ))}
+
+            {overdue.slice(0, 2).map((a) => (
+              <AlertCard
+                key={a.id}
+                tone="bad"
+                title="Pagamento vencido"
+                body={`${a.partyName} está com ${money(a.amount - a.paidAmount)} em atraso.`}
+                onClick={() => navigate('receivable', { accountId: a.id })}
+              />
+            ))}
+
+            {lowStock.slice(0, 2).map((s) => {
+              const product = products.find((p) => p.id === s.productId);
+              if (!product) return null;
+              return (
+                <AlertCard
+                  key={s.productId}
+                  tone={stockLevel(s) === 'critico' ? 'bad' : 'warn'}
+                  title="Estoque baixo"
+                  body={`${product.name} com ${num(available(s))} cx disponíveis — mínimo ${num(s.minimum)}.`}
+                  onClick={() => navigate('product', { productId: product.id })}
+                />
+              );
+            })}
+
+            {expiring.slice(0, 1).map((b) => {
+              const product = products.find((p) => p.id === b.productId);
+              if (!product) return null;
+              return (
+                <AlertCard
+                  key={b.id}
+                  tone="warn"
+                  title="Produto próximo da validade"
+                  body={`Lote ${b.code} de ${product.name} vence em ${daysUntil(b.expiresAt)} dias.`}
+                  onClick={() => navigate('product', { productId: product.id })}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <Stat
           label="Vendas hoje"
           value={moneyShort(sales)}
-          hint={`${todayOrders.length} pedidos`}
+          hint={compararComOntem(sales, vendasOntem)}
           tone="brand"
           icon={<TrendingUp size={16} className="text-brand-600" />}
           onClick={() => navigate('reports')}
@@ -289,10 +428,7 @@ function ManagerHome() {
         <Stat
           label="Pedidos"
           value={num(todayOrders.length)}
-          hint={(() => {
-            const n = todayOrders.filter((o) => o.status === 'entregue').length;
-            return `${n} ${n === 1 ? 'entregue' : 'entregues'}`;
-          })()}
+          hint={compararComOntem(todayOrders.length, pedidosDeOntem.length, num)}
           onClick={() => switchTab('orders')}
         />
         <Stat
@@ -357,63 +493,6 @@ function ManagerHome() {
             )}
           </div>
         </Card>
-      </div>
-
-      <div>
-        <SectionTitle
-          action={
-            unread.length > 0 ? (
-              <span className="rounded-full bg-bad-50 px-2 py-0.5 text-micro font-bold text-bad-700">
-                {unread.length} novos
-              </span>
-            ) : undefined
-          }
-        >
-          Alertas
-        </SectionTitle>
-        <div className="space-y-2.5">
-          {lowStock.slice(0, 1).map((s) => {
-            const product = products.find((p) => p.id === s.productId)!;
-            return (
-              <AlertCard
-                key={s.productId}
-                tone={stockLevel(s) === 'critico' ? 'bad' : 'warn'}
-                title="Estoque baixo"
-                body={`${product.name} com ${num(available(s))} cx disponíveis — mínimo ${num(s.minimum)}.`}
-                onClick={() => navigate('product', { productId: product.id })}
-              />
-            );
-          })}
-          {lateRoute && (
-            <AlertCard
-              tone="bad"
-              title="Rota atrasada"
-              body={`Rota #${lateRoute.number} está acima do tempo previsto.`}
-              onClick={() => navigate('route', { routeId: lateRoute.id })}
-            />
-          )}
-          {overdue.slice(0, 1).map((a) => (
-            <AlertCard
-              key={a.id}
-              tone="bad"
-              title="Pagamento vencido"
-              body={`${a.partyName} está com ${money(a.amount - a.paidAmount)} em atraso.`}
-              onClick={() => navigate('receivable', { accountId: a.id })}
-            />
-          ))}
-          {expiring.slice(0, 1).map((b) => {
-            const product = products.find((p) => p.id === b.productId)!;
-            return (
-              <AlertCard
-                key={b.id}
-                tone="warn"
-                title="Produto próximo da validade"
-                body={`Lote ${b.code} de ${product.name} vence em ${daysUntil(b.expiresAt)} dias.`}
-                onClick={() => navigate('product', { productId: product.id })}
-              />
-            );
-          })}
-        </div>
       </div>
 
       <div>

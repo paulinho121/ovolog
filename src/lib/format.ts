@@ -130,3 +130,22 @@ function pad(n: number) {
 function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
+
+/* ------------------------------------------------------------- Comparação */
+
+/* Número sozinho não orienta decisão. "R$ 12.400" não diz se o dia está bom;
+   "R$ 12.400, 18% acima de ontem" diz. É a diferença entre um painel que se
+   consulta e um painel que se ignora. */
+export function compararComOntem(
+  hoje: number,
+  ontem: number,
+  formatar: (n: number) => string = (n) => String(n),
+): string {
+  if (ontem === 0) {
+    // Sem base não se inventa porcentagem: 0 → 5 não é "+500%", é o começo.
+    return hoje === 0 ? 'sem movimento ontem' : `${formatar(hoje)} a mais que ontem`;
+  }
+  const variacao = Math.round(((hoje - ontem) / ontem) * 100);
+  if (variacao === 0) return 'igual a ontem';
+  return variacao > 0 ? `${variacao}% acima de ontem` : `${Math.abs(variacao)}% abaixo de ontem`;
+}

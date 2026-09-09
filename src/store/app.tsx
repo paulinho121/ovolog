@@ -44,6 +44,7 @@ import {
   type ItemFila,
 } from '../lib/fila';
 import { distanciaKm, temCoordenada, type Coord } from '../lib/mapa';
+import { formaDaCondicao } from '../lib/domain';
 import { carregarEstado } from '../data/repositorio';
 import { supabase, supabaseConfigurado } from '../lib/supabase';
 import * as repo from '../data/repositorio';
@@ -532,9 +533,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   /* -------------------------------------------------------- Carrinho */
 
-  const startCart = useCallback((customerId: string) => {
-    setCart({ customerId, lines: [], discount: 0, payment: null, installments: 1 });
-  }, []);
+  const startCart = useCallback(
+    (customerId: string) => {
+      /* A forma de pagamento nasce da condição negociada com o cliente, não
+         em branco. Quem vende no balcão do cliente já sabe como aquele
+         cliente paga — o app não deveria perguntar de novo a cada pedido. */
+      const cliente = customers.find((c) => c.id === customerId);
+      setCart({
+        customerId,
+        lines: [],
+        discount: 0,
+        payment: formaDaCondicao(cliente?.paymentTerms),
+        installments: 1,
+      });
+    },
+    [customers],
+  );
 
   const setCartQty = useCallback((productId: string, quantity: number) => {
     setCart((c) => {
