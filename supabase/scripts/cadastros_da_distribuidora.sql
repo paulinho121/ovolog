@@ -33,12 +33,40 @@ end $$;
 
 -- O 0004 era um MODELO. Se ele entrou como estava, existem um usuário
 -- "Nome Sobrenome" e um produto de exemplo — dado fictício ocupando o lugar
--- do real. Estas remoções falham de propósito se algo já depende deles: um
--- produto com pedido lançado não pode sumir, e o erro é o aviso.
+-- do real.
+--
+-- Um produto que já tem pedido, devolução ou compra lançados NÃO é removido:
+-- apagar levaria junto o histórico da operação, e a versão do pedido que
+-- sobrasse ficaria sem saber o que foi vendido. Esses ficam e são listados no
+-- fim, para você decidir — renomear costuma ser a saída certa.
 
-delete from estoque where produto_id in (select id from produtos where id like '%EXEMPLO%');
-delete from produtos where id like '%EXEMPLO%';
+create temporary table exemplos_presos as
+select p.id, p.nome,
+       (select count(*) from pedido_itens i where i.produto_id = p.id) as pedidos,
+       (select count(*) from devolucoes   d where d.produto_id = p.id) as devolucoes,
+       (select count(*) from compra_itens c where c.produto_id = p.id) as compras
+  from produtos p
+ where p.id like '%EXEMPLO%'
+   and (exists (select 1 from pedido_itens i where i.produto_id = p.id)
+     or exists (select 1 from devolucoes   d where d.produto_id = p.id)
+     or exists (select 1 from compra_itens c where c.produto_id = p.id));
+
+-- Só sai o que não deixa buraco. `estoque` e `lotes` caem por cascata.
+delete from produtos
+ where id like '%EXEMPLO%'
+   and id not in (select id from exemplos_presos);
+
 delete from usuarios where id like '%EXEMPLO%' and auth_id is null;
+
+do $$
+declare r record;
+begin
+  for r in select * from exemplos_presos loop
+    raise notice
+      'MANTIDO: produto % (%) tem % pedido(s), % devolucao(oes), % compra(s). Renomeie em vez de apagar.',
+      r.nome, r.id, r.pedidos, r.devolucoes, r.compras;
+  end loop;
+end $$;
 
 -- =====================================================================
 -- 2. Produtos
@@ -128,6 +156,13 @@ commit;
 --        (select count(*) from veiculos      v where v.distribuidora_id = d.id) veiculos,
 --        (select count(*) from clientes      c where c.distribuidora_id = d.id) clientes
 --   from distribuidoras d order by d.criada_em;
+--
+-- Produto de exemplo com histórico: renomeie em vez de apagar. O id fica
+-- (é o que os pedidos apontam), mas o nome e o preço passam a ser reais:
+--
+--   update produtos set nome = 'Ovo Branco Grande', tipo = 'branco',
+--          preco = 185.00, custo = 142.00, duzias_por_caixa = 30
+--    where id = 'p-EXEMPLO';
 --
 -- Quem ainda não pode entrar no app:
 --
