@@ -75,9 +75,9 @@ const frame = (screen: ScreenName, params: Frame['params'] = {}): Frame => ({
 });
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
-  /* Começa no login: a tela de splash agora é a própria espera da carga
-     inicial, exibida pelo `Boot` antes deste provider existir. */
-  const [stack, setStack] = useState<Frame[]>(() => [frame('login')]);
+  /* Começa na Home: este provider só é montado depois do login, e o `Boot`
+     cuida de splash, acesso e carga antes de chegar aqui. */
+  const [stack, setStack] = useState<Frame[]>(() => [frame('home')]);
   const [tab, setTab] = useState<TabName>('home');
   const [direction, setDirection] = useState<1 | -1>(1);
 
@@ -139,6 +139,13 @@ export function useNav() {
   if (!ctx) throw new Error('useNav precisa estar dentro de NavigationProvider');
   return ctx;
 }
+
+/* Versão que não estoura fora do provider. A tela de recuperação de senha
+   aparece nos dois lados da fronteira do login: dentro da pilha (vindo do
+   perfil) e fora dela (vindo do acesso). */
+useNav.opcional = function usarNavOpcional() {
+  return useContext(NavContext);
+};
 
 /** Parâmetros da tela atual, já tipados como string. */
 export function useParams() {

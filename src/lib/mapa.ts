@@ -37,10 +37,9 @@ export const ZOOM_PADRAO = 11;
 /** Um registro sem coordenada não pode ir para o mapa. Cliente cadastrado
  *  antes da geocodificação cai neste caso — some do mapa, mas continua na
  *  lista, que é melhor do que aparecer num lugar errado. */
-export function temCoordenada(v: {
-  lat?: number | null;
-  lng?: number | null;
-}): v is { lat: number; lng: number } {
+export function temCoordenada<T extends { lat?: number | null; lng?: number | null }>(
+  v: T,
+): v is T & Coord {
   return typeof v.lat === 'number' && typeof v.lng === 'number';
 }
 

@@ -19,10 +19,13 @@ export const supabase = createClient(
   anonKey ?? 'chave-ausente',
   {
     auth: {
-      // O app ainda não usa Supabase Auth: a tela de acesso é um seletor de
-      // perfil. Sem sessão para persistir nem token para renovar.
-      persistSession: false,
-      autoRefreshToken: false,
+      // A sessão fica no aparelho: quem trabalha em rota não pode ter que
+      // digitar senha a cada vez que o navegador é reciclado em segundo plano.
+      persistSession: true,
+      // O token de acesso é curto; sem renovação automática o app deslogaria
+      // no meio do dia, que em campo é o pior momento possível.
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
     },
   },
 );

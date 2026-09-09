@@ -12,6 +12,9 @@ export type Role =
 
 export interface User {
   id: string;
+  /** Conta de acesso (auth.users) ligada a esta pessoa. Ausente = pessoa
+   *  cadastrada na operação que ainda não pode entrar no app. */
+  authId?: string;
   name: string;
   role: Role;
   phone: string;

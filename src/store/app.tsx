@@ -30,8 +30,22 @@ import type {
   Vehicle,
 } from '../types';
 import { hidratarCatalogo, products, users } from '../data/catalog';
+import {
+  descreverOperacao,
+  executarOperacao,
+  op,
+  type Operacao,
+} from '../data/operacoes';
+import {
+  enfileirarNoDisco,
+  filaPersistente,
+  lerFila,
+  removerDoDisco,
+  type ItemFila,
+} from '../lib/fila';
 import { distanciaKm, temCoordenada, type Coord } from '../lib/mapa';
 import { carregarEstado } from '../data/repositorio';
+import { supabase, supabaseConfigurado } from '../lib/supabase';
 import * as repo from '../data/repositorio';
 import { available, nextStop, orderTotal, resolveAccountStatus } from '../lib/domain';
 
@@ -57,14 +71,24 @@ interface AppState {
   recarregar: () => void;
 
   /* Sessão */
+  /* Acesso */
+  /** null enquanto o app verifica se já existe sessão salva no aparelho. */
+  autenticado: boolean | null;
+  /** A pessoa da equipe correspondente à conta autenticada. */
   session: User | null;
-  signIn: (userId: string) => void;
-  signOut: () => void;
+  /** Autenticado, mas sem vínculo com ninguém em `usuarios`: a conta existe
+   *  e não foi ligada a uma pessoa da operação. */
+  semVinculo: boolean;
+  /** Devolve a mensagem de erro, ou null se entrou. */
+  signIn: (email: string, senha: string) => Promise<string | null>;
+  signOut: () => Promise<void>;
 
   /* Conectividade */
   connection: ConnectionState;
   pendingSync: number;
-  setConnection: (c: ConnectionState) => void;
+  /** Falso quando o IndexedDB não está disponível: a fila não sobrevive a um
+   *  recarregamento, e a interface precisa dizer isso. */
+  filaPersistente: boolean;
   syncNow: () => void;
 
   /* Dados */
@@ -154,6 +178,8 @@ const nextId = (prefix: string) => `${prefix}${++idSeq}`;
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<User | null>(null);
+  const [autenticado, setAutenticado] = useState<boolean | null>(null);
+  const [semVinculo, setSemVinculo] = useState(false);
 
   /* Tudo começa vazio: a fonte de verdade é o Supabase, e o app só renderiza
      depois que a carga inicial chega (ver `carregando`). */
@@ -201,9 +227,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setToasts((t) => t.filter((x) => x.id !== id));
   }, []);
 
+  /* ------------------------------------------------------------ Acesso */
+
+  /* Uma sessão salva no aparelho é a diferença entre abrir o app e começar a
+     trabalhar, ou abrir o app e procurar a senha no meio da rua. O Supabase
+     guarda e renova o token; aqui só se observa o resultado. */
+  useEffect(() => {
+    if (!supabaseConfigurado) {
+      setAutenticado(false);
+      return;
+    }
+    let vivo = true;
+
+    void supabase.auth.getSession().then(({ data }) => {
+      if (vivo) setAutenticado(Boolean(data.session));
+    });
+
+    const { data: assinatura } = supabase.auth.onAuthStateChange((_evento, sessao) => {
+      if (!vivo) return;
+      setAutenticado(Boolean(sessao));
+      if (!sessao) {
+        setSession(null);
+        setSemVinculo(false);
+      }
+    });
+
+    return () => {
+      vivo = false;
+      assinatura.subscription.unsubscribe();
+    };
+  }, []);
+
   /* ---------------------------------------------------- Carga inicial */
 
+  /* A carga só acontece depois do login. Com o RLS fechado, buscar dados sem
+     sessão não dá erro — devolve listas vazias, e o app pareceria um banco
+     recém-criado em vez de uma tela de acesso. */
   useEffect(() => {
+    if (!autenticado) {
+      setCarregando(autenticado === null);
+      return;
+    }
     let cancelado = false;
     setCarregando(true);
     setErroCarga(null);
@@ -234,6 +298,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setIncidents(d.ocorrencias);
         setReturns(d.devolucoes);
         setNotifications(d.notificacoes);
+
+        /* Quem é a pessoa por trás da conta autenticada. Sem esse vínculo o
+           app não sabe o papel, e sem papel não há Home nem permissão. */
+        void supabase.auth.getUser().then(({ data }) => {
+          if (cancelado) return;
+          const eu = d.usuarios.find((u) => u.authId && u.authId === data.user?.id);
+          setSession(eu ?? null);
+          setSemVinculo(!eu);
+        });
+
         setCarregando(false);
       })
       .catch((e: unknown) => {
@@ -245,7 +319,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelado = true;
     };
-  }, [tentativa]);
+  }, [tentativa, autenticado]);
 
   const recarregar = useCallback(() => setTentativa((n) => n + 1), []);
 
@@ -258,71 +332,129 @@ export function AppProvider({ children }: { children: ReactNode }) {
      esperar a rede para responder. Se a gravação falhar (ou o aparelho estiver
      offline), a operação entra na fila e é reenviada em ordem quando a conexão
      volta. */
-  const fila = useRef<{ descricao: string; executar: () => Promise<void> }[]>([]);
+  const fila = useRef<ItemFila[]>([]);
+  /* Impede duas drenagens simultâneas — o boot, o evento `online` e o toque
+     em "sincronizar" podem disparar juntos, e a fila é ordenada. */
+  const drenando = useRef(false);
 
-  const enfileirar = useCallback((descricao: string, executar: () => Promise<void>) => {
-    fila.current.push({ descricao, executar });
+  const enfileirar = useCallback(async (operacao: Operacao) => {
+    const id = await enfileirarNoDisco(operacao);
+    /* id nulo = IndexedDB indisponível. A operação ainda entra na fila em
+       memória para a sessão atual funcionar; o que se perde é sobreviver a um
+       recarregamento, e a interface avisa isso. */
+    fila.current.push({ id: id ?? -Date.now(), operacao, em: new Date().toISOString() });
     setPendingSync(fila.current.length);
   }, []);
 
-  const commit = useCallback(
-    (apply: () => void, sincronizar?: () => Promise<void>) => {
-      apply();
-      if (!sincronizar) return;
-      if (connection !== 'online') {
-        enfileirar('alteração', sincronizar);
-        return;
-      }
-      sincronizar().catch((e: unknown) => {
-        // Falhou online: guarda para tentar de novo em vez de perder.
-        enfileirar('alteração', sincronizar);
-        toast(
-          `Sem gravar no servidor: ${e instanceof Error ? e.message : 'erro'}`,
-          'warn',
-        );
-      });
-    },
-    [connection, enfileirar, toast],
-  );
-
-  const syncNow = useCallback(async () => {
+  const drenar = useCallback(async () => {
+    if (drenando.current) return;
     if (fila.current.length === 0) {
-      setConnectionState('online');
+      setConnectionState(navigator.onLine ? 'online' : 'offline');
       setPendingSync(0);
       return;
     }
+    if (!navigator.onLine) {
+      setConnectionState('offline');
+      return;
+    }
+
+    drenando.current = true;
     setConnectionState('sincronizando');
-    // Em ordem, e parando no primeiro erro: as operações dependem umas das
-    // outras (o item do pedido não existe antes do pedido).
-    while (fila.current.length > 0) {
-      const proxima = fila.current[0];
-      try {
-        await proxima.executar();
+    try {
+      // Em ordem, e parando no primeiro erro: as operações dependem umas das
+      // outras (o item do pedido não existe antes do pedido).
+      while (fila.current.length > 0) {
+        const proxima = fila.current[0];
+        try {
+          await executarOperacao(proxima.operacao);
+        } catch (e: unknown) {
+          setConnectionState('offline');
+          toast(
+            `Não foi possível enviar ${descreverOperacao(proxima.operacao)}. Continua salvo no aparelho.`,
+            'warn',
+          );
+          console.warn('[sync] falha ao enviar', proxima.operacao, e);
+          return;
+        }
+        /* Só sai do disco depois de o servidor confirmar. Remover antes abriria
+           uma janela em que a operação sumiu daqui e não chegou lá. */
+        if (proxima.id >= 0) await removerDoDisco(proxima.id);
         fila.current.shift();
         setPendingSync(fila.current.length);
-      } catch (e: unknown) {
-        setConnectionState('offline');
-        toast(
-          `Falha ao sincronizar: ${e instanceof Error ? e.message : 'erro'}`,
-          'bad',
-        );
-        return;
       }
+      setConnectionState('online');
+      toast('Tudo sincronizado', 'ok');
+    } finally {
+      drenando.current = false;
     }
-    setConnectionState('online');
-    toast('Alterações sincronizadas', 'ok');
   }, [toast]);
 
-  const setConnection = useCallback(
-    (c: ConnectionState) => {
-      if (c === 'online' && fila.current.length > 0) {
-        void syncNow();
+  const commit = useCallback(
+    (apply: () => void, ...operacoes: Operacao[]) => {
+      apply();
+      if (operacoes.length === 0) return;
+
+      /* Com fila pendente, tudo entra na fila — mesmo online. Enviar a operação
+         nova por fora furaria a ordem, e a que está esperando pode ser
+         pré-requisito desta. */
+      if (!navigator.onLine || fila.current.length > 0) {
+        void (async () => {
+          for (const operacao of operacoes) await enfileirar(operacao);
+          void drenar();
+        })();
         return;
       }
-      setConnectionState(c);
+
+      void (async () => {
+        for (let i = 0; i < operacoes.length; i++) {
+          try {
+            await executarOperacao(operacoes[i]);
+          } catch {
+            /* Falhou no meio: esta e as seguintes vão para a fila, na ordem,
+               para não deixar metade da alteração aplicada no banco. */
+            for (const restante of operacoes.slice(i)) await enfileirar(restante);
+            setConnectionState('offline');
+            return;
+          }
+        }
+      })();
     },
-    [syncNow],
+    [enfileirar, drenar],
   );
+
+  const syncNow = useCallback(() => void drenar(), [drenar]);
+
+  /* Carrega o que ficou pendente da sessão anterior e tenta enviar. É o que
+     transforma a fila em garantia: sem isto, persistir não serviria de nada. */
+  useEffect(() => {
+    void (async () => {
+      const pendentes = await lerFila();
+      if (pendentes.length > 0) {
+        fila.current = pendentes;
+        setPendingSync(pendentes.length);
+      }
+      void drenar();
+    })();
+  }, [drenar]);
+
+  /* O estado da conexão passa a ser leitura do aparelho, não um botão.
+     `navigator.onLine` só sabe se existe interface de rede — por isso ele
+     dispara a tentativa, e quem decide se está mesmo online é o resultado da
+     sincronização. */
+  useEffect(() => {
+    const voltou = () => {
+      setConnectionState('online');
+      void drenar();
+    };
+    const caiu = () => setConnectionState('offline');
+    window.addEventListener('online', voltou);
+    window.addEventListener('offline', caiu);
+    if (!navigator.onLine) setConnectionState('offline');
+    return () => {
+      window.removeEventListener('online', voltou);
+      window.removeEventListener('offline', caiu);
+    };
+  }, [drenar]);
 
   /* ------------------------------------------------------------ Rota */
 
@@ -522,14 +654,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
       if (conta) setAccounts((a) => [conta, ...a]);
       if (lancamento) setCashEntries((c) => [lancamento, ...c]);
-    }, async () => {
+    },
       // Ordem importa: o pedido precisa existir antes da conta que o referencia.
-      await repo.inserirPedido(order);
-      for (const item of estoqueAtualizado) await repo.salvarEstoque(item);
-      if (clienteAtualizado) await repo.salvarCliente(clienteAtualizado);
-      if (conta) await repo.inserirConta(conta);
-      if (lancamento) await repo.inserirLancamento(lancamento);
-    });
+      op('inserirPedido', order),
+      ...estoqueAtualizado.map((item) => op('salvarEstoque', item)),
+      ...(clienteAtualizado ? [op('salvarCliente', clienteAtualizado)] : []),
+      ...(conta ? [op('inserirConta', conta)] : []),
+      ...(lancamento ? [op('inserirLancamento', lancamento)] : []),
+    );
     return id;
   }, [cart, orders.length, session, activeRoute, commit, customers, stock]);
 
@@ -552,6 +684,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const startRoute = useCallback(
     (routeId: string) => {
       const iniciadaEm = new Date().toISOString();
+      const rotaAtual = routes.find((r) => r.id === routeId);
+      const veiculoAtual = vehicles.find((v) => v.id === rotaAtual?.vehicleId);
       commit(() => {
         patchRoute(routeId, (r) => ({
           ...r,
@@ -568,16 +702,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
             os.map((o) => (o.routeId === routeId && o.status === 'confirmado' ? { ...o, status: 'em_rota' } : o)),
           );
         }
-      }, async () => {
-        const route = routes.find((r) => r.id === routeId);
-        if (!route) return;
-        await repo.atualizarRota({ ...route, status: 'em_andamento', startedAt: iniciadaEm });
-        const primeira = route.stops[0];
-        if (primeira) await repo.atualizarParada({ ...primeira, status: 'a_caminho' });
-        const veiculo = vehicles.find((v) => v.id === route.vehicleId);
-        if (veiculo) await repo.atualizarVeiculo({ ...veiculo, status: 'em_rota', routeId });
-        await repo.atualizarPedidosDaRota(routeId, 'confirmado', 'em_rota');
-      });
+      },
+        ...(rotaAtual
+          ? [op('atualizarRota', { ...rotaAtual, status: 'em_andamento', startedAt: iniciadaEm })]
+          : []),
+        ...(rotaAtual?.stops[0]
+          ? [op('atualizarParada', { ...rotaAtual.stops[0], status: 'a_caminho' })]
+          : []),
+        ...(veiculoAtual
+          ? [op('atualizarVeiculo', { ...veiculoAtual, status: 'em_rota', routeId })]
+          : []),
+        op('atualizarPedidosDaRota', routeId, 'confirmado', 'em_rota'),
+      );
       toast('Rota iniciada — rastreamento ativo', 'ok');
     },
     [commit, patchRoute, routes, vehicles, toast],
@@ -589,9 +725,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const parada = routes.find((r) => r.id === routeId)?.stops.find((s) => s.id === stopId);
       commit(
         () => patchStop(routeId, stopId, (s) => ({ ...s, status: 'chegou', arrivedAt: chegouEm })),
-        parada
-          ? () => repo.atualizarParada({ ...parada, status: 'chegou', arrivedAt: chegouEm })
-          : undefined,
+        ...(parada
+          ? [op('atualizarParada', { ...parada, status: 'chegou', arrivedAt: chegouEm })]
+          : []),
       );
       toast('Chegada confirmada', 'ok');
     },
@@ -615,14 +751,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
             ),
           };
         });
-      }, async () => {
-        if (parada) {
-          await repo.atualizarParada({ ...parada, status: 'concluida', completedAt: concluidaEm });
-        }
-        if (seguinte && seguinte.status === 'pendente') {
-          await repo.atualizarParada({ ...seguinte, status: 'a_caminho' });
-        }
-      });
+      },
+        ...(parada
+          ? [op('atualizarParada', { ...parada, status: 'concluida', completedAt: concluidaEm })]
+          : []),
+        ...(seguinte && seguinte.status === 'pendente'
+          ? [op('atualizarParada', { ...seguinte, status: 'a_caminho' })]
+          : []),
+      );
     },
     [commit, patchStop, patchRoute, routes],
   );
@@ -632,7 +768,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const parada = routes.find((r) => r.id === routeId)?.stops.find((s) => s.id === stopId);
       commit(
         () => patchStop(routeId, stopId, (s) => ({ ...s, status: 'nao_atendida' })),
-        parada ? () => repo.atualizarParada({ ...parada, status: 'nao_atendida' }) : undefined,
+        ...(parada ? [op('atualizarParada', { ...parada, status: 'nao_atendida' })] : []),
       );
     },
     [commit, patchStop, routes],
@@ -641,6 +777,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const finishRoute = useCallback(
     (routeId: string) => {
       const finalizadaEm = new Date().toISOString();
+      const rotaAtual = routes.find((r) => r.id === routeId);
+      const veiculoAtual = vehicles.find((v) => v.id === rotaAtual?.vehicleId);
       commit(() => {
         patchRoute(routeId, (r) => ({ ...r, status: 'finalizada', finishedAt: finalizadaEm }));
         const route = routes.find((r) => r.id === routeId);
@@ -649,15 +787,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
             vs.map((v) => (v.id === route.vehicleId ? { ...v, status: 'disponivel', routeId: undefined } : v)),
           );
         }
-      }, async () => {
-        const route = routes.find((r) => r.id === routeId);
-        if (!route) return;
-        await repo.atualizarRota({ ...route, status: 'finalizada', finishedAt: finalizadaEm });
-        const veiculo = vehicles.find((v) => v.id === route.vehicleId);
-        if (veiculo) {
-          await repo.atualizarVeiculo({ ...veiculo, status: 'disponivel', routeId: undefined });
-        }
-      });
+      },
+        ...(rotaAtual
+          ? [op('atualizarRota', { ...rotaAtual, status: 'finalizada', finishedAt: finalizadaEm })]
+          : []),
+        ...(veiculoAtual
+          ? [op('atualizarVeiculo', { ...veiculoAtual, status: 'disponivel', routeId: undefined })]
+          : []),
+      );
       toast('Rota finalizada', 'ok');
     },
     [commit, patchRoute, routes, vehicles, toast],
@@ -706,11 +843,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           );
           if (movimentacao) setStockMoves((m) => [movimentacao, ...m]);
         }
-      }, async () => {
-        await repo.atualizarPedido(orderId, { status: 'entregue' });
-        for (const item of estoqueBaixado) await repo.salvarEstoque(item);
-        if (movimentacao) await repo.inserirMovimentacao(movimentacao);
-      });
+      },
+        op('atualizarPedido', orderId, { status: 'entregue' }),
+        ...estoqueBaixado.map((item) => op('salvarEstoque', item)),
+        ...(movimentacao ? [op('inserirMovimentacao', movimentacao)] : []),
+      );
       toast(`Entrega confirmada para ${receiver}`, 'ok');
     },
     [commit, orders, session, stock, toast],
@@ -721,7 +858,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const ocorrencia: Incident = { id: nextId('i'), at: new Date().toISOString(), ...input };
       commit(
         () => setIncidents((i) => [ocorrencia, ...i]),
-        () => repo.inserirOcorrencia(ocorrencia),
+        op('inserirOcorrencia', ocorrencia),
       );
       toast('Ocorrência registrada', 'warn');
     },
@@ -755,11 +892,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setStock((s) => s.map((i) => (i.productId === input.productId ? itemAtualizado : i)));
         }
         setStockMoves((m) => [movimentacao, ...m]);
-      }, async () => {
-        await repo.inserirDevolucao(devolucao);
-        if (itemAtualizado) await repo.salvarEstoque(itemAtualizado);
-        await repo.inserirMovimentacao(movimentacao);
-      });
+      },
+        op('inserirDevolucao', devolucao),
+        ...(itemAtualizado ? [op('salvarEstoque', itemAtualizado)] : []),
+        op('inserirMovimentacao', movimentacao),
+      );
       toast(`${input.boxes} cx devolvidas`, 'warn');
     },
     [commit, session, stock, toast],
@@ -800,11 +937,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             cs.map((c) => (c.id === clienteAtualizado.id ? clienteAtualizado : c)),
           );
         }
-      }, async () => {
-        await repo.atualizarConta(contaAtualizada);
-        await repo.inserirLancamento(lancamento);
-        if (clienteAtualizado) await repo.salvarCliente(clienteAtualizado);
-      });
+      },
+        op('atualizarConta', contaAtualizada),
+        op('inserirLancamento', lancamento),
+        ...(clienteAtualizado ? [op('salvarCliente', clienteAtualizado)] : []),
+      );
       toast('Pagamento registrado', 'ok');
     },
     [commit, accounts, customers, toast],
@@ -839,10 +976,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (atualizado) {
           setStock((s) => s.map((i) => (i.productId === input.productId ? atualizado : i)));
         }
-      }, async () => {
-        await repo.inserirMovimentacao(movimentacao);
-        if (atualizado) await repo.salvarEstoque(atualizado);
-      });
+      },
+        op('inserirMovimentacao', movimentacao),
+        ...(atualizado ? [op('salvarEstoque', atualizado)] : []),
+      );
       toast('Movimentação registrada', 'ok');
     },
     [commit, session, stock, toast],
@@ -894,12 +1031,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ...movimentacoes,
           ...m,
         ]);
-      }, async () => {
-        await repo.atualizarCompraStatus(purchaseId, 'recebida');
-        for (const lote of lotes) await repo.inserirLote(lote);
-        for (const item of estoqueAtualizado) await repo.salvarEstoque(item);
-        for (const m of movimentacoes) await repo.inserirMovimentacao(m);
-      });
+      },
+        op('atualizarCompraStatus', purchaseId, 'recebida'),
+        ...lotes.map((lote) => op('inserirLote', lote)),
+        ...estoqueAtualizado.map((item) => op('salvarEstoque', item)),
+        ...movimentacoes.map((m) => op('inserirMovimentacao', m)),
+      );
       toast('Entrada registrada no estoque', 'ok');
     },
     [purchases, commit, session, stock, toast],
@@ -917,7 +1054,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
       commit(
         () => setPurchases((ps) => [compra, ...ps]),
-        () => repo.inserirCompra(compra),
+        op('inserirCompra', compra),
       );
       toast('Compra registrada', 'ok');
       return id;
@@ -941,7 +1078,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
       commit(
         () => setCustomers((cs) => [cliente, ...cs]),
-        () => repo.salvarCliente(cliente),
+        op('salvarCliente', cliente),
       );
       toast('Cliente cadastrado', 'ok');
       return id;
@@ -952,27 +1089,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const markNotificationsRead = useCallback(() => {
     commit(
       () => setNotifications((ns) => ns.map((n) => ({ ...n, read: true }))),
-      () => repo.marcarNotificacoesLidas(),
+      op('marcarNotificacoesLidas'),
     );
   }, [commit]);
 
   /* ---------------------------------------------------------- Sessão */
 
-  const signIn = useCallback((userId: string) => {
-    const user = users.find((u) => u.id === userId) ?? users[0];
-    setSession(user);
+  const signIn = useCallback(async (email: string, senha: string) => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password: senha,
+    });
+    if (!error) return null;
+
+    /* O Supabase devolve a mesma mensagem para e-mail inexistente e senha
+       errada, de propósito: dizer qual dos dois falhou entrega a quem tenta
+       adivinhar a informação de que aquele e-mail existe. A tradução aqui
+       mantém isso e troca o texto técnico por um que orienta. */
+    if (error.message.includes('Invalid login credentials')) {
+      return 'E-mail ou senha incorretos.';
+    }
+    if (error.message.includes('Email not confirmed')) {
+      return 'Este acesso ainda não foi confirmado. Fale com o gestor da operação.';
+    }
+    if (error.message.toLowerCase().includes('failed to fetch')) {
+      return 'Sem conexão para entrar. O login precisa de internet uma vez.';
+    }
+    return 'Não foi possível entrar agora. Tente de novo em instantes.';
   }, []);
 
-  const signOut = useCallback(() => {
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut();
     setSession(null);
+    setSemVinculo(false);
     clearCart();
   }, [clearCart]);
 
   const value = useMemo<AppState>(
     () => ({
       carregando, erroCarga, recarregar,
-      session, signIn, signOut,
-      connection, pendingSync, setConnection, syncNow,
+      autenticado, session, semVinculo, signIn, signOut,
+      connection, pendingSync, syncNow, filaPersistente: filaPersistente(),
       customers, orders, routes, vehicles, stock, stockMoves, purchases,
       accounts, cashEntries, incidents, returns, notifications,
       position, gpsIndisponivel,
@@ -988,7 +1145,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }),
     [
       carregando, erroCarga, recarregar,
-      session, signIn, signOut, connection, pendingSync, setConnection, syncNow,
+      autenticado, session, semVinculo, signIn, signOut, connection, pendingSync, syncNow,
       customers, orders, routes, vehicles, stock, stockMoves, purchases,
       accounts, cashEntries, incidents, returns, notifications,
       position, gpsIndisponivel, distanceToNextStop, activeRoute,

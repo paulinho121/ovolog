@@ -14,7 +14,8 @@ import { Field, OptionCard, Segmented } from '../components/ui/forms';
 import { Sheet } from '../components/ui/overlays';
 import { EmptyState } from '../components/ui/states';
 import { StackedBar } from '../components/charts';
-import { AccountCard, PAYMENT_ICON, PAYMENT_LABEL } from '../components/domain';
+import { AccountCard, PAYMENT_LABEL } from '../components/domain';
+import { SheetPagamentoConta } from '../components/pagamento';
 import { useApp } from '../store/app';
 import { useNav, useParams } from '../store/navigation';
 import { accountOpen, accountsTotal } from '../lib/domain';
@@ -169,7 +170,7 @@ export function FinanceScreen() {
         </div>
       </Screen>
 
-      <RegisterPaymentSheet accountId={payFor} onClose={() => setPayFor(null)} />
+      <SheetPagamentoConta accountId={payFor} onClose={() => setPayFor(null)} />
     </>
   );
 }
@@ -267,7 +268,7 @@ function AccountDetail({ kind }: { kind: 'receber' | 'pagar' }) {
         </StickyAction>
       )}
 
-      <RegisterPaymentSheet accountId={payOpen ? account.id : null} onClose={() => setPayOpen(false)} />
+      <SheetPagamentoConta accountId={payOpen ? account.id : null} onClose={() => setPayOpen(false)} />
     </>
   );
 }
@@ -284,65 +285,3 @@ export function PayableScreen() {
 
 const METHODS: PaymentMethod[] = ['pix', 'dinheiro', 'cartao'];
 
-function RegisterPaymentSheet({
-  accountId,
-  onClose,
-}: {
-  accountId: string | null;
-  onClose: () => void;
-}) {
-  const { accounts, registerAccountPayment } = useApp();
-  const account = accounts.find((a) => a.id === accountId);
-  const open = account ? accountOpen(account) : 0;
-
-  const [method, setMethod] = useState<PaymentMethod>('pix');
-  const [value, setValue] = useState('');
-
-  // O valor padrão é o total em aberto: o caso comum é quitar de uma vez.
-  const amount = value === '' ? open : Number(value) || 0;
-
-  return (
-    <Sheet
-      open={accountId !== null}
-      onClose={onClose}
-      title="Registrar pagamento"
-      subtitle={account ? `${account.partyName} • ${money(open)} em aberto` : undefined}
-      footer={
-        <Button
-          size="lg"
-          block
-          disabled={amount <= 0}
-          onClick={() => {
-            if (account) registerAccountPayment(account.id, Math.min(amount, open), method);
-            setValue('');
-            onClose();
-          }}
-        >
-          Registrar {money(amount)}
-        </Button>
-      }
-    >
-      <div className="space-y-2.5 px-4 pb-2">
-        <Field label="Valor recebido (R$)" hint="Deixe em branco para quitar o total.">
-          <input
-            value={value}
-            onChange={(e) => setValue(e.target.value.replace(/\D/g, ''))}
-            inputMode="numeric"
-            placeholder={String(Math.round(open))}
-            className="h-12 w-full rounded-xl border border-shell-300 bg-white px-3.5 text-[16px] tnum text-shell-900 placeholder:text-shell-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
-          />
-        </Field>
-        <SectionTitle className="pt-1">Forma</SectionTitle>
-        {METHODS.map((m) => (
-          <OptionCard
-            key={m}
-            selected={method === m}
-            onClick={() => setMethod(m)}
-            icon={PAYMENT_ICON[m]}
-            title={PAYMENT_LABEL[m]}
-          />
-        ))}
-      </div>
-    </Sheet>
-  );
-}

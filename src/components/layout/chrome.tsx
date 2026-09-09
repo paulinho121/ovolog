@@ -22,8 +22,16 @@ import { Avatar, Dot } from '../ui/primitives';
 
 /* ------------------------------------------------------------- Conexão */
 
+/* A pílula é LEITURA do estado da conexão, não um controle dele.
+
+   Antes, tocar nela executava `setConnection('offline')` — um atalho de
+   desenvolvimento que sobrou no produto. Quem tocasse por curiosidade
+   passava a operar offline sem entender por quê, e culpava a operadora.
+
+   O único toque que faz sentido aqui é reenviar o que está pendente, e só
+   quando existe algo pendente. Sem pendência ela nem é botão. */
 export function ConnectionPill({ compact }: { compact?: boolean }) {
-  const { connection, pendingSync, setConnection, syncNow } = useApp();
+  const { connection, pendingSync, syncNow } = useApp();
 
   const map = {
     online: { tone: 'ok' as const, label: 'Online', icon: <Cloud size={13} /> },
@@ -31,10 +39,14 @@ export function ConnectionPill({ compact }: { compact?: boolean }) {
     offline: { tone: 'bad' as const, label: 'Offline', icon: <CloudOff size={13} /> },
   }[connection];
 
+  const podeReenviar = pendingSync > 0 && connection !== 'sincronizando';
+  const Tag = podeReenviar ? 'button' : 'span';
+
   return (
-    <button
-      onClick={() => (connection === 'offline' ? syncNow() : setConnection('offline'))}
-      aria-label={`Conexão: ${map.label}. Tocar para alternar.`}
+    <Tag
+      {...(podeReenviar
+        ? { onClick: syncNow, 'aria-label': `${map.label}. ${pendingSync} para enviar. Tocar para enviar agora.` }
+        : { role: 'status', 'aria-label': `Conexão: ${map.label}` })}
       className={cn(
         'inline-flex h-7 items-center gap-1.5 rounded-full px-2.5',
         'text-micro font-bold uppercase tracking-wide',
@@ -48,13 +60,13 @@ export function ConnectionPill({ compact }: { compact?: boolean }) {
       {pendingSync > 0 && (
         <span className="ml-0.5 rounded-full bg-white/70 px-1.5 tnum">{pendingSync}</span>
       )}
-    </button>
+    </Tag>
   );
 }
 
 /* Aviso de pendências — aparece só quando há algo esperando sincronizar. */
 export function SyncBanner() {
-  const { pendingSync, connection, syncNow } = useApp();
+  const { pendingSync, connection, syncNow, filaPersistente } = useApp();
   if (pendingSync === 0) return null;
   return (
     <button
@@ -63,7 +75,8 @@ export function SyncBanner() {
     >
       <RefreshCw size={15} className={cn('shrink-0 text-warn-700', connection === 'sincronizando' && 'animate-spin')} />
       <span className="flex-1 text-meta font-semibold text-warn-700">
-        {pendingSync} {pendingSync === 1 ? 'alteração aguardando' : 'alterações aguardando'} sincronização
+        {pendingSync} {pendingSync === 1 ? 'alteração salva' : 'alterações salvas'} no aparelho
+        {filaPersistente ? ', aguardando envio' : ' — não feche o app até enviar'}
       </span>
       {connection !== 'sincronizando' && (
         <span className="text-meta font-bold text-warn-700 underline">Sincronizar</span>

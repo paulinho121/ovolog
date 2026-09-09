@@ -109,6 +109,3 @@ export function hidratarCatalogo(dados: {
   if (dados.clientes) substituir(customers, dados.clientes);
 }
 
-/** Sem equipe cadastrada não há como entrar no app: a tela de acesso é um
- *  seletor de perfil. A tela de acesso usa isto para explicar o que falta. */
-export const catalogoVazio = () => users.length === 0;

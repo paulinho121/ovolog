@@ -412,7 +412,7 @@ function Shell() {
    apareceriam por um instante com listas vazias — que é indistinguível, para
    quem olha, de "não tem nada cadastrado". */
 function Boot() {
-  const { carregando, erroCarga, recarregar } = useApp();
+  const { autenticado, carregando, erroCarga, recarregar } = useApp();
 
   if (!supabaseConfigurado) {
     return (
@@ -422,6 +422,15 @@ function Boot() {
       />
     );
   }
+
+  /* Verificando se há sessão salva no aparelho. Dura milissegundos, mas sem
+     este estado a tela de login pisca antes de o app perceber que a pessoa
+     já estava conectada. */
+  if (autenticado === null) return <SplashScreen />;
+
+  /* Sem sessão, o login é a única tela: não há dado carregado para mostrar,
+     e com o RLS fechado também não haveria. */
+  if (!autenticado) return <LoginScreen />;
 
   if (erroCarga) {
     return (

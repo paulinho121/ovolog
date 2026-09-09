@@ -31,6 +31,9 @@ export interface MapStop {
   sequence: number;
 }
 
+/** Parada cujo cliente já tem endereço localizado — a única que vai ao mapa. */
+type ParadaLocalizada = MapStop & { customer: Customer & Coord };
+
 /* ------------------------------------------------------------- Marcadores */
 
 /* Os marcadores são HTML (divIcon), não imagens: herdam as cores e o tipo do
@@ -130,7 +133,10 @@ export function MapCanvas({
 
   /* Só entra no mapa quem tem coordenada. Cliente sem geocodificar fica de
      fora — some do mapa e continua na lista. */
-  const paradas = useMemo(() => stops.filter((s) => temCoordenada(s.customer)), [stops]);
+  const paradas = useMemo(
+    () => stops.filter((s): s is ParadaLocalizada => temCoordenada(s.customer)),
+    [stops],
+  );
   const frota = useMemo(() => vehicles.filter(temCoordenada), [vehicles]);
 
   const semCoordenada = stops.length > 0 && paradas.length === 0;

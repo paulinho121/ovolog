@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { ArrowRight, Eye, EyeOff, Mail } from 'lucide-react';
-import { catalogoVazio, users } from '../data/catalog';
+import { ArrowRight, Eye, EyeOff, LoaderCircle, Mail, TriangleAlert } from 'lucide-react';
 import { useApp } from '../store/app';
+import { supabase } from '../lib/supabase';
 import { useNav } from '../store/navigation';
 import { Button, Card } from '../components/ui/primitives';
 import { Field, Input } from '../components/ui/forms';
@@ -43,27 +43,39 @@ export function SplashScreen({ legenda }: { legenda?: string } = {}) {
 /* ---------------------------------------------------------------- Login */
 
 export function LoginScreen() {
-  const { signIn } = useApp();
-  const { navigate, reset } = useNav();
-  const [userId, setUserId] = useState(users[0]?.id ?? '');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const { signIn, semVinculo, signOut } = useApp();
+  const [recuperando, setRecuperando] = useState(false);
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [verSenha, setVerSenha] = useState(false);
+  const [entrando, setEntrando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
-  const selected = users.find((u) => u.id === userId);
+  /* Autenticado mas sem pessoa correspondente em `usuarios`. Acontece quando
+     alguém cria o acesso no painel do Supabase e esquece de ligar à equipe —
+     e sem isso o app não sabe o papel, então não há Home para mostrar. */
+  if (semVinculo) return <SemVinculo onSair={() => void signOut()} />;
+  if (recuperando) return <ForgotScreen onBack={() => setRecuperando(false)} />;
 
-  function enter() {
-    signIn(userId);
-    reset('home');
+  async function entrar() {
+    if (entrando) return;
+    setEntrando(true);
+    setErro(null);
+    const falha = await signIn(email, senha);
+    setEntrando(false);
+    /* Entrou: `onAuthStateChange` no store vira a chave, o Boot troca a tela
+       e a navegação nasce já na Home. Nada a fazer aqui. */
+    if (falha) setErro(falha);
   }
 
-  /* Sem equipe cadastrada não há em quem entrar: esta tela é um seletor de
-     perfil, e a lista vem do banco. Melhor dizer o que falta do que mostrar
-     um seletor vazio e um botão que não leva a lugar nenhum. */
-  if (catalogoVazio()) return <SemEquipeCadastrada />;
+  const podeEntrar = email.includes('@') && senha.length >= 6 && !entrando;
 
   return (
     <div className="flex min-h-screen flex-col bg-white">
-      <div className="bg-brand-700 px-6 pb-10" style={{ paddingTop: 'calc(var(--safe-top) + 3rem)' }}>
+      <div
+        className="bg-brand-700 px-6 pb-10"
+        style={{ paddingTop: 'calc(var(--safe-top) + 3rem)' }}
+      >
         <div className="grid size-14 place-items-center rounded-2xl bg-white/15 text-3xl backdrop-blur">
           🥚
         </div>
@@ -71,125 +83,136 @@ export function LoginScreen() {
         <p className="mt-1 text-body text-brand-100">Entre para começar a operação de hoje.</p>
       </div>
 
-      <div className="flex-1 space-y-5 px-5 py-6">
+      <form
+        className="flex-1 space-y-5 px-5 py-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void entrar();
+        }}
+      >
         <Field label="E-mail">
           <div className="relative">
-            <Mail size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-shell-400" />
-            <Input value={selected?.email ?? ''} readOnly className="pl-11" />
+            <Mail
+              size={18}
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-shell-400"
+            />
+            <Input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              inputMode="email"
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              placeholder="voce@empresa.com.br"
+              className="pl-11"
+            />
           </div>
         </Field>
 
         <Field label="Senha">
           <div className="relative">
             <Input
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              type={verSenha ? 'text' : 'password'}
+              value={senha}
+              onChange={(e) => setSenha(e.target.value)}
+              autoComplete="current-password"
               className="pr-12"
             />
             <button
-              onClick={() => setShowPassword((v) => !v)}
-              aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+              type="button"
+              onClick={() => setVerSenha((v) => !v)}
+              aria-label={verSenha ? 'Ocultar senha' : 'Mostrar senha'}
               className="absolute right-1 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-full text-shell-500 active:bg-shell-200"
             >
-              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              {verSenha ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
         </Field>
 
-        {/* Seletor de perfil: o protótipo abre a operação inteira, e cada
-            perfil tem uma Home diferente (§54). */}
-        <div>
-          <span className="mb-2 block text-meta font-semibold text-shell-700">Entrar como</span>
-          <div className="grid grid-cols-2 gap-2">
-            {users.map((u) => (
-              <button
-                key={u.id}
-                onClick={() => setUserId(u.id)}
-                aria-pressed={userId === u.id}
-                className={cn(
-                  'flex min-h-[3.25rem] items-center gap-2.5 rounded-xl border-2 px-3 text-left transition-colors',
-                  userId === u.id
-                    ? 'border-brand-600 bg-brand-50'
-                    : 'border-shell-200 bg-white active:bg-shell-50',
-                )}
-              >
-                <span
-                  className={cn(
-                    'grid size-8 shrink-0 place-items-center rounded-full text-micro font-bold',
-                    userId === u.id ? 'bg-brand-600 text-white' : 'bg-shell-200 text-shell-700',
-                  )}
-                >
-                  {u.initials}
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-meta font-bold text-shell-900">
-                    {u.name.split(' ')[0]}
-                  </span>
-                  <span className="block truncate text-micro text-shell-600">
-                    {ROLE_LABEL[u.role]}
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
+        {erro && (
+          <p role="alert" className="flex items-start gap-2 text-meta font-semibold text-bad-700">
+            <TriangleAlert size={15} className="mt-0.5 shrink-0" />
+            {erro}
+          </p>
+        )}
 
-        <Button size="lg" block disabled={!selected} onClick={enter} icon={<ArrowRight size={18} />}>
-          Entrar
+        <Button
+          type="submit"
+          size="lg"
+          block
+          disabled={!podeEntrar}
+          icon={entrando ? <LoaderCircle size={18} className="animate-spin" /> : <ArrowRight size={18} />}
+        >
+          {entrando ? 'Entrando…' : 'Entrar'}
         </Button>
 
         <button
-          onClick={() => navigate('forgot')}
+          type="button"
+          onClick={() => setRecuperando(true)}
           className="block w-full py-2 text-center text-body font-semibold text-brand-800"
         >
           Esqueci minha senha
         </button>
-      </div>
+      </form>
     </div>
   );
 }
 
-/* -------------------------------------------------- Banco sem cadastro */
+/* ------------------------------------------------- Conta sem vínculo */
 
-/* Estado de banco vazio. Acontece antes da primeira carga de dados reais e
-   quando a conexão com o Supabase está de pé mas o schema ainda não foi
-   populado. Os dois casos têm a mesma saída, e nenhuma delas é o app
-   inventar uma equipe para deixar alguém entrar. */
-function SemEquipeCadastrada() {
+/* O acesso existe e a senha está certa, mas ninguém em `usuarios` aponta para
+   esta conta. Deixar entrar sem papel definido daria uma Home vazia e sem
+   explicação; dizer o que falta resolve em um minuto para quem administra. */
+function SemVinculo({ onSair }: { onSair: () => void }) {
   return (
     <div
       className="flex min-h-screen flex-col bg-white px-6"
       style={{ paddingTop: 'calc(var(--safe-top) + 4rem)' }}
     >
-      <div className="grid size-14 place-items-center rounded-2xl bg-shell-100 text-3xl">🥚</div>
+      <div className="grid size-14 place-items-center rounded-2xl bg-warn-50 text-warn-700">
+        <TriangleAlert size={26} />
+      </div>
       <h1 className="mt-5 text-display font-bold tracking-tight text-shell-900">
-        Nenhuma equipe cadastrada
+        Acesso sem equipe vinculada
       </h1>
       <p className="mt-2 text-body text-shell-600">
-        O banco está conectado, mas não há ninguém em <strong>usuarios</strong>. Como o acesso
-        é por perfil, não há em quem entrar.
+        Sua senha está correta, mas esta conta ainda não foi ligada a ninguém da operação —
+        então o app não sabe qual é o seu papel.
       </p>
       <Card className="mt-6 p-4">
         <p className="text-meta text-shell-700">
-          Preencha e rode <strong>supabase/migrations/0004_dados_reais.sql</strong> no SQL
-          Editor do Supabase, com a equipe, os produtos, os fornecedores e os veículos da
-          operação. Depois recarregue esta página.
+          Peça ao gestor para vincular seu acesso ao seu cadastro. As instruções estão em
+          <strong> supabase/migrations/0006_autenticacao_e_rls.sql</strong>.
         </p>
       </Card>
-      <p className="mt-4 text-micro text-shell-500">
-        Cliente não entra por lá: depois de acessar o app, cadastre em Clientes.
-      </p>
+      <div className="flex-1" />
+      <Button variant="secondary" size="lg" block onClick={onSair} className="mb-6">
+        Sair
+      </Button>
     </div>
   );
 }
-
 /* ------------------------------------------------------ Recuperar senha */
 
-export function ForgotScreen() {
-  const { back } = useNav();
+export function ForgotScreen({ onBack }: { onBack?: () => void } = {}) {
+  const nav = useNav.opcional();
+  const back = onBack ?? nav?.back ?? (() => {});
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+
+  /* O e-mail é enviado pelo Supabase. A tela confirma do mesmo jeito tendo a
+     conta ou não — dizer "este e-mail não existe" entregaria quais endereços
+     têm acesso ao sistema para quem estivesse testando. */
+  async function enviar() {
+    setEnviando(true);
+    await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin,
+    });
+    setEnviando(false);
+    setSent(true);
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-white px-5" style={{ paddingTop: 'calc(var(--safe-top) + 1rem)' }}>
@@ -237,8 +260,8 @@ export function ForgotScreen() {
           <Button
             size="lg"
             block
-            disabled={!email.includes('@')}
-            onClick={() => setSent(true)}
+            disabled={!email.includes('@') || enviando}
+            onClick={() => void enviar()}
             className="mb-6"
           >
             Enviar link

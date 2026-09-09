@@ -31,11 +31,12 @@ import { EmptyState } from '../components/ui/states';
 import { PAYMENT_ICON, PAYMENT_LABEL, RETURN_REASON_LABEL } from '../components/domain';
 import { MapCanvas } from '../components/map/MapCanvas';
 import { useApp, useCustomer, useOrder, useRoute } from '../store/app';
+import { SheetPagamentoConta } from '../components/pagamento';
 import { useNav, useParams } from '../store/navigation';
 import { products, userById, vehicleById } from '../data/catalog';
 import { temCoordenada } from '../lib/mapa';
 import { nextStop, orderBoxes, orderTotal, routeSummary } from '../lib/domain';
-import { dateTime, km, money, num, time } from '../lib/format';
+import { dateTime, km, money, num, shortDate, time } from '../lib/format';
 import type { IncidentKind, PaymentMethod, ReturnReason } from '../types';
 
 /* Sequência de campo: chegar → atender → entregar → comprovar → seguir.
@@ -146,9 +147,11 @@ export function CheckInScreen() {
 export function VisitScreen() {
   const { routeId, stopId } = useParams();
   const route = useRoute(String(routeId));
-  const { customers, orders, completeStop, startCart } = useApp();
+  const { customers, orders, accounts, completeStop, startCart } = useApp();
   const { navigate, replace } = useNav();
   const [finishOpen, setFinishOpen] = useState(false);
+  /* null = fechado; '' = escolhendo a conta; id = recebendo naquela conta. */
+  const [receberEm, setReceberEm] = useState<string | null>(null);
 
   const stop =
     route?.stops.find((s) => s.id === stopId) ??
@@ -160,6 +163,16 @@ export function VisitScreen() {
 
   const stopOrders = orders.filter((o) => stop.orderIds.includes(o.id));
   const pending = stopOrders.filter((o) => o.status !== 'entregue');
+
+  /* Contas em aberto DESTE cliente. Antes, receber em campo jogava o
+     motorista na aba financeira global, sem filtro e sem valor — com o
+     cliente esperando na porta. */
+  const emAberto = accounts
+    .filter((a) => a.kind === 'receber' && a.partyId === customer.id && a.status !== 'pago')
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
+  const totalAberto = emAberto.reduce((t, a) => t + (a.amount - a.paidAmount), 0);
+  const contaSelecionada = emAberto.find((a) => a.id === receberEm);
 
   const actions = [
     {
@@ -183,8 +196,20 @@ export function VisitScreen() {
     {
       icon: <Wallet size={20} />,
       label: 'Registrar pagamento',
-      hint: customer.balance > 0 ? `${money(customer.balance)} em aberto` : 'Sem saldo devedor',
-      onClick: () => navigate('finance'),
+      hint:
+        emAberto.length === 0
+          ? 'Sem contas em aberto'
+          : emAberto.length === 1
+            ? `${money(totalAberto)} em aberto`
+            : `${money(totalAberto)} em ${emAberto.length} contas`,
+      /* Uma conta é o caso comum: vai direto para o recebimento. Mais de uma
+         abre a escolha — quitar por conta é como o financeiro já funciona, e
+         ratear valor entre contas seria inventar regra que não existe. */
+      onClick: () =>
+        emAberto.length === 0
+          ? undefined
+          : setReceberEm(emAberto.length === 1 ? emAberto[0].id : ''),
+      desabilitado: emAberto.length === 0,
     },
     {
       icon: <AlertTriangle size={20} />,
@@ -216,7 +241,8 @@ export function VisitScreen() {
             <button
               key={a.label}
               onClick={a.onClick}
-              className="flex min-h-[4.25rem] w-full items-center gap-3 rounded-card border border-shell-200 bg-white p-4 text-left shadow-card active:bg-shell-50"
+              disabled={a.desabilitado}
+              className="flex min-h-[4.25rem] w-full items-center gap-3 rounded-card border border-shell-200 bg-white p-4 text-left shadow-card active:bg-shell-50 disabled:opacity-45 disabled:shadow-none"
             >
               <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-100 text-brand-800">
                 {a.icon}
@@ -279,6 +305,44 @@ export function VisitScreen() {
         }
         confirmLabel={pending.length > 0 ? 'Finalizar mesmo assim' : 'Finalizar visita'}
         tone={pending.length > 0 ? 'danger' : 'primary'}
+      />
+
+      {/* Mais de uma conta em aberto: o motorista escolhe qual está quitando. */}
+      <Sheet
+        open={receberEm === ''}
+        onClose={() => setReceberEm(null)}
+        title="Qual conta o cliente está pagando?"
+        subtitle={`${money(totalAberto)} em aberto`}
+      >
+        <div className="px-4 pb-2">
+          <Card className="divide-y divide-shell-200 overflow-hidden">
+            {emAberto.map((conta) => (
+              <button
+                key={conta.id}
+                onClick={() => setReceberEm(conta.id)}
+                className="flex w-full items-center justify-between px-4 py-3.5 text-left active:bg-shell-50"
+              >
+                <span className="min-w-0">
+                  <span className="block font-semibold text-shell-900">
+                    Vence {shortDate(conta.dueDate)}
+                  </span>
+                  <span className="block text-meta text-shell-600">
+                    {conta.orderId ? 'Pedido vinculado' : 'Avulsa'}
+                    {conta.status === 'vencido' ? ' • vencida' : ''}
+                  </span>
+                </span>
+                <span className="shrink-0 font-bold tnum text-shell-900">
+                  {money(conta.amount - conta.paidAmount)}
+                </span>
+              </button>
+            ))}
+          </Card>
+        </div>
+      </Sheet>
+
+      <SheetPagamentoConta
+        accountId={contaSelecionada?.id ?? null}
+        onClose={() => setReceberEm(null)}
       />
     </>
   );
@@ -818,51 +882,3 @@ export function RouteHistoryScreen() {
 }
 
 /* Sheet reutilizada para registrar recebimento durante a visita. */
-export function PaymentSheet({
-  open,
-  onClose,
-  amount,
-  onConfirm,
-}: {
-  open: boolean;
-  onClose: () => void;
-  amount: number;
-  onConfirm: (method: PaymentMethod, value: number) => void;
-}) {
-  const [method, setMethod] = useState<PaymentMethod>('pix');
-  const [value, setValue] = useState(String(Math.round(amount)));
-
-  return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      title="Registrar pagamento"
-      subtitle={`Em aberto: ${money(amount)}`}
-      footer={
-        <Button size="lg" block onClick={() => onConfirm(method, Number(value) || 0)}>
-          Registrar {money(Number(value) || 0)}
-        </Button>
-      }
-    >
-      <div className="space-y-2.5 px-4 pb-2">
-        <Field label="Valor recebido (R$)">
-          <input
-            value={value}
-            onChange={(e) => setValue(e.target.value.replace(/\D/g, ''))}
-            inputMode="numeric"
-            className="h-12 w-full rounded-xl border border-shell-300 bg-white px-3.5 text-[16px] tnum text-shell-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
-          />
-        </Field>
-        {(['pix', 'dinheiro', 'cartao'] as PaymentMethod[]).map((m) => (
-          <OptionCard
-            key={m}
-            selected={method === m}
-            onClick={() => setMethod(m)}
-            icon={PAYMENT_ICON[m]}
-            title={PAYMENT_LABEL[m]}
-          />
-        ))}
-      </div>
-    </Sheet>
-  );
-}

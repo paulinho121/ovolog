@@ -132,6 +132,7 @@ export async function carregarEstado(): Promise<EstadoRemoto> {
 
     usuarios: usuarios.map((r) => ({
       id: String(r.id),
+      authId: r.auth_id ? String(r.auth_id) : undefined,
       name: String(r.nome),
       role: r.papel as User['role'],
       phone: String(r.telefone ?? ''),

@@ -169,6 +169,8 @@ As migrações rodam no SQL Editor do Supabase, em ordem:
 | `0001_reset_e_schema.sql` | Recria o schema `public` inteiro: tipos, 21 tabelas, índices, RLS |
 | `0003_zerar_dados_demo.sql` | Esvazia todas as tabelas. Irreversível |
 | `0004_dados_reais.sql` | Cadastros da operação — **modelo para preencher** |
+| `0005_coordenadas_reais.sql` | Adiciona lat/lng. Só cria colunas, seguro rodar |
+| `0006_autenticacao_e_rls.sql` | Supabase Auth e RLS fechado. **Leia antes de rodar** |
 
 O `0002_seed.sql`, que carregava a demonstração, foi removido: ele começava
 com um `truncate` de tudo, e reaplicar as migrações em ordem apagaria dados
@@ -207,19 +209,27 @@ pedido). Nenhuma tela precisa saber se há conexão.
 `src/data/repositorio.ts` é a única fronteira que conhece nomes de coluna.
 Trocar o backend significa reescrever esse arquivo, e mais nada.
 
-### Segurança
+### Acesso e segurança
 
-O RLS está **ligado em todas as tabelas**, mas com políticas de demonstração
-que liberam tudo para a chave anônima — porque o app ainda não tem
-autenticação real (a tela de acesso é um seletor de perfil).
+O acesso é **Supabase Auth**: e-mail e senha por pessoa. A sessão fica no
+aparelho e o token se renova sozinho — quem trabalha em rota não digita senha
+de novo a cada vez que o navegador recicla a aba.
 
-**Isso não pode ir para produção.** Ao entrar Supabase Auth, troque `to anon`
-por `to authenticated` e escreva a regra de cada tabela (ex.: um motorista só
-enxerga as rotas dele). O mecanismo já está ativo justamente para essa troca
-ser editar política, e não habilitar RLS com o banco em uso.
+`usuarios` guarda o cadastro da operação (nome, papel, veículo) e `auth_id`
+liga cada pessoa à conta de acesso. Sem esse vínculo a pessoa entra e o app
+não sabe o papel dela — a tela diz exatamente isso em vez de abrir vazia.
 
-A chave `anon` é pública e vai no bundle — é o RLS que protege os dados, não
-o sigilo dela. A `service_role` nunca deve aparecer no cliente.
+As políticas de RLS exigem `authenticated` **e** vínculo com a equipe. Fora
+isso: só gestor edita `usuarios` e `produtos` (sem isso um motorista poderia
+se promover ou mudar preço pela API), e **nenhuma tabela aceita delete** —
+não há tela de exclusão, e histórico de operação não se apaga.
+
+A chave `anon` continua pública e indo no bundle. O que mudou é que agora ela
+sozinha não abre nada: sem sessão, toda consulta volta vazia. A
+`service_role` nunca deve aparecer no cliente.
+
+Falta ainda a separação fina por papel — um motorista enxerga as rotas de
+todos, não só as dele. É política a escrever, não mecanismo a habilitar.
 
 ## Mapa
 
@@ -260,12 +270,33 @@ operação por um detalhe de tecnologia.
 A distância mostrada é em linha reta (haversine), sempre menor que o caminho
 pela rua. Serve para liberar o check-in, não para prometer horário.
 
+## Trabalho sem sinal
+
+Toda alteração é aplicada na tela primeiro e enviada depois. Sem conexão (ou
+com o servidor fora), a operação vai para uma fila **em IndexedDB** e sobe
+sozinha quando a rede volta — inclusive se o app tiver sido fechado no meio.
+
+A fila guarda dados, não funções: `src/data/operacoes.ts` tem o catálogo do
+que pode ser enfileirado, e cada item é o nome de uma operação mais os
+argumentos. Isso é o que permite gravar no disco; a versão anterior guardava
+*closures*, que não serializam, e por isso a fila morria a cada recarga.
+
+Duas regras que a fila respeita:
+
+- **Ordem.** As operações dependem umas das outras (o item do pedido não
+  existe antes do pedido), então a fila é reenviada em sequência e para no
+  primeiro erro. Com fila pendente, alteração nova entra na fila mesmo online.
+- **Confirmação antes da remoção.** O item só sai do disco depois de o
+  servidor aceitar. Remover antes abriria uma janela em que a operação sumiu
+  daqui e não chegou lá.
+
+Se o IndexedDB não estiver disponível (aba anônima, armazenamento bloqueado),
+o app continua funcionando com a fila em memória e **avisa** que o pendente
+se perde ao fechar — em vez de prometer o que não pode cumprir.
+
 ## Limites desta versão
 
-- **A fila offline vive na memória.** Recarregar a página com alterações
-  pendentes perde a fila. Para offline de verdade ela precisa ir para
-  IndexedDB.
-- **Sem autenticação real** e, portanto, sem RLS de verdade (ver acima).
+- **Sem separação de dados por papel**: quem entra enxerga a operação inteira.
 - **Sem tempo real nem resolução de conflito**: dois aparelhos editando o
   mesmo pedido, o último a gravar vence. O Supabase oferece Realtime para
   isso quando fizer sentido.

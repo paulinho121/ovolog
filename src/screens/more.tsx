@@ -27,14 +27,13 @@ import {
   ListRow,
   SectionTitle,
 } from '../components/ui/primitives';
-import { OptionCard, Segmented } from '../components/ui/forms';
+import { Segmented } from '../components/ui/forms';
 import { ConfirmSheet } from '../components/ui/overlays';
 import { EmptyState } from '../components/ui/states';
 import { NotificationRow } from '../components/domain';
 import { useApp } from '../store/app';
 import { useNav, type ScreenName } from '../store/navigation';
 import { phone as fmtPhone } from '../lib/format';
-import type { ConnectionState } from '../types';
 
 const ROLE_LABEL: Record<string, string> = {
   vendedor: 'Vendedor',
@@ -290,7 +289,7 @@ export function ProfileScreen() {
         open={exitOpen}
         onClose={() => setExitOpen(false)}
         onConfirm={() => {
-          signOut();
+          void signOut();
           reset('login');
         }}
         title="Sair do aplicativo?"
@@ -305,7 +304,7 @@ export function ProfileScreen() {
 /* --------------------------------------------------------- Configurações */
 
 export function SettingsScreen() {
-  const { connection, setConnection, pendingSync, syncNow } = useApp();
+  const { connection, pendingSync, syncNow, filaPersistente } = useApp();
   const [notifyOrders, setNotifyOrders] = useState(true);
   const [notifyStock, setNotifyStock] = useState(true);
   const [notifyFinance, setNotifyFinance] = useState(false);
@@ -330,23 +329,16 @@ export function SettingsScreen() {
               <ConnectionPill />
             </div>
 
-            {/* Simular a queda de sinal é essencial para demonstrar o
-                comportamento offline sem depender da rede real. */}
-            <div className="mt-4 space-y-2">
-              {(['online', 'offline'] as ConnectionState[]).map((c) => (
-                <OptionCard
-                  key={c}
-                  selected={connection === c}
-                  onClick={() => setConnection(c)}
-                  icon={c === 'offline' ? <CloudOff size={20} /> : <Bell size={20} />}
-                  title={c === 'online' ? 'Online' : 'Simular modo offline'}
-                  subtitle={
-                    c === 'online'
-                      ? 'Sincroniza automaticamente'
-                      : 'Registra visitas, pedidos e entregas no aparelho'
-                  }
-                />
-              ))}
+            {/* O estado da conexão é lido do aparelho, não escolhido aqui.
+                O que esta tela precisa responder é outra pergunta: "o que eu
+                registrei está seguro?". */}
+            <div className="mt-4 flex items-start gap-2.5 rounded-card bg-shell-100 p-3">
+              <CloudOff size={18} className="mt-0.5 shrink-0 text-shell-500" />
+              <p className="text-meta text-shell-700">
+                {filaPersistente
+                  ? 'Sem sinal, o app continua funcionando: pedidos, visitas e entregas ficam gravados no aparelho e sobem sozinhos quando a conexão voltar — mesmo que você feche o app.'
+                  : 'Este navegador não permite gravar no aparelho. Sem sinal o app continua funcionando, mas o que ficar pendente se perde se o app for fechado antes de sincronizar.'}
+              </p>
             </div>
 
             {pendingSync > 0 && (
