@@ -247,7 +247,7 @@ As migrações rodam no SQL Editor do Supabase, em ordem:
 | --- | --- |
 | `0001_reset_e_schema.sql` | Recria o schema `public` inteiro: tipos, 21 tabelas, índices, RLS |
 | `0003_zerar_dados_demo.sql` | Esvazia todas as tabelas. Irreversível |
-| `0004_dados_reais.sql` | Cadastros da operação — **modelo para preencher** |
+| `0004_dados_reais.sql` | Cadastros da operação — **modelo, superado pelo script abaixo** |
 | `0005_coordenadas_reais.sql` | Adiciona lat/lng. Só cria colunas, seguro rodar |
 | `0006_autenticacao_e_rls.sql` | Supabase Auth e RLS fechado. **Leia antes de rodar** |
 | `0007_multiempresa.sql` | Separa as distribuidoras por tenant. **Leia antes de rodar** |
@@ -255,6 +255,12 @@ As migrações rodam no SQL Editor do Supabase, em ordem:
 O `0002_seed.sql`, que carregava a demonstração, foi removido: ele começava
 com um `truncate` de tudo, e reaplicar as migrações em ordem apagaria dados
 reais para repor os falsos. Está no histórico do git se precisar consultar.
+
+> **O 0004 ficou desatualizado.** Ele foi escrito antes da multiempresa e
+> insere sem `distribuidora_id`; rodando pelo SQL Editor hoje, o gatilho não
+> consegue preencher o tenant (`auth.uid()` é nulo ali) e o INSERT bate no
+> NOT NULL. Use `supabase/scripts/cadastros_da_distribuidora.sql`, que escolhe
+> a distribuidora no topo e limpa os registros de exemplo do 0004.
 
 ### Cadastros que só entram por SQL
 
